@@ -1,60 +1,63 @@
 import yfinance as yf
-dat = yf.Ticker("ITMG.JK")
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
 
-# Financial data relevant for machine learning models
-print("FINANCIALLY RELEVANT DATA FOR PREDICTIVE MODELING:")
+def fetch_data(ticker_symbol="ITMG.JK", period="2y", window_size=20):
+    ticker = yf.Ticker(ticker_symbol)
 
-# Historical price data - highly relevant for time series prediction models
-print("\nHistorical Price Data (1 month):")
-historical_data = dat.history(period='1mo')
-print(historical_data)
-print("ML Relevance: Critical for time series prediction, trend analysis, and return forecasting")
+    # Download historical price data (using a longer period)
+    hist = ticker.history(period=period)
+    hist = hist[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
+    hist.reset_index(inplace=True)
 
-# Quarterly financial statements - relevant for fundamental analysis models
-print("\nQuarterly Income Statement:")
-quarterly_financials = dat.quarterly_income_stmt
-print(quarterly_financials)
-print("ML Relevance: Important for fundamental analysis models predicting earnings or financial health")
+    ts_data = []
+    targets = []
+    for i in range(len(hist) - window_size - 1):
+        window = hist.iloc[i:i+window_size]
+        window_array = window[['Open', 'High', 'Low', 'Close', 'Volume']].values.astype(float)
+        ts_data.append(window_array)
+        # Modified: extract multiple target variables instead of just 'Close'
+        target = hist.iloc[i+window_size][['Open', 'High', 'Low', 'Close', 'Volume']].values.astype(float)
+        targets.append(target)
 
-# Analyst price targets - relevant for consensus prediction models
-print("\nAnalyst Price Targets:")
-analyst_targets = dat.analyst_price_targets
-print(analyst_targets)
-print("ML Relevance: Useful as a feature for price prediction models")
+    ts_data = np.array(ts_data)
+    targets = np.array(targets)  # Now targets have shape: (num_samples, 5)
 
-# Options data - relevant for volatility and sentiment models
-print("\nOptions Chain:")
-if len(dat.options) > 0:
-    options_data = dat.option_chain(dat.options[0]).calls
-    print(options_data)
-    print("ML Relevance: Valuable for implied volatility prediction and sentiment analysis")
+    # Normalize time series data across the feature dimension
+    num_samples, seq_len, num_features = ts_data.shape
+    ts_data = ts_data.reshape(-1, num_features)
+    ts_scaler = StandardScaler()
+    ts_data_scaled = ts_scaler.fit_transform(ts_data).reshape(num_samples, seq_len, num_features)
 
-# Calendar data - relevant for event-based prediction models
-print("\nCalendar (Earnings dates, etc.):")
-calendar_data = dat.calendar
-print(calendar_data)
-print("ML Relevance: Useful for event-based trading strategies and earnings surprise models")
+    # Extract tabular features
+    info = ticker.info
+    numerical_keys = ['marketCap', 'beta', 'dividendYield', 'trailingPE',
+                      'forwardPE', 'bookValue', 'priceToBook', 'returnOnEquity',
+                      'debtToEquity', 'freeCashflow']
+    tab_vector = []
+    for key in numerical_keys:
+        try:
+            tab_vector.append(float(info.get(key, 0)))
+        except:
+            tab_vector.append(0.0)
+    tab_vector = np.array(tab_vector).reshape(1, -1)
 
-# Multiple tickers for comparative analysis
-print("\nMULTIPLE TICKERS DATA (Comparative Analysis):")
-market_data = yf.download(['MSFT', 'AAPL', 'GOOG'], period='1mo')
-print(market_data)
-print("ML Relevance: Essential for cross-sectional analysis, relative valuation models, and sector performance")
+    # Repeat the tabular vector for each sample and normalize
+    tab_data = np.repeat(tab_vector, num_samples, axis=0)
+    tab_scaler = StandardScaler()
+    tab_data_scaled = tab_scaler.fit_transform(tab_data)
 
-# ETF data for market benchmark and sector analysis
-print("\nSPY ETF DATA (Market Benchmark):")
-spy = yf.Ticker('SPY').funds_data
-print("Top Holdings:")
-print(spy.top_holdings)
-print("ML Relevance: Useful for market correlation models and sector rotation strategies")
+    # Normalize targets (now with shape (num_samples, 5))
+    target_scaler = StandardScaler()
+    targets_scaled = target_scaler.fit_transform(targets)
 
-# Key company info - selectively useful for feature engineering
-print("\nSelected Company Info:")
-info = dat.info
-relevant_keys = ['sector', 'industry', 'marketCap', 'beta', 'dividendYield',
-                'trailingPE', 'forwardPE', 'bookValue', 'priceToBook',
-                'returnOnEquity', 'debtToEquity', 'freeCashflow']
-for key in relevant_keys:
-    if key in info:
-        print(f"{key}: {info[key]}")
-print("ML Relevance: Useful for feature engineering in fundamental analysis models")
+    # Optionally, you can save these scalers for later inverse-transformation
+    np.save("ts_data.npy", ts_data_scaled)
+    np.save("tab_data.npy", tab_data_scaled)
+    np.save("targets.npy", targets_scaled)
+    print("Data saved to ts_data.npy, tab_data.npy, and targets.npy")
+    return ts_data_scaled, tab_data_scaled, targets_scaled
+
+if __name__ == "__main__":
+    ts_data, tab_data, targets = fetch_data()
