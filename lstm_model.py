@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import data_loader
-from torch.utils.data import Dataset, DataLoader
 
 class Attention(nn.Module):
     def __init__(self, hidden_size):
@@ -105,19 +104,6 @@ class MultiTargetFinanceModel(nn.Module):
         predictions = torch.cat([pred_open, pred_high, pred_low, pred_close, pred_volume], dim=1)
         return predictions
 
-# Custom dataset for multi-target prediction
-class FinanceDataset(Dataset):
-    def __init__(self, ts_data, tab_data, targets):
-        self.ts_data = torch.from_numpy(ts_data).float()
-        self.tab_data = torch.from_numpy(tab_data).float()
-        self.targets = torch.from_numpy(targets).float()
-
-    def __len__(self):
-        return len(self.targets)
-
-    def __getitem__(self, idx):
-        return self.ts_data[idx], self.tab_data[idx], self.targets[idx]
-
 def train_model(model, train_loader, num_epochs=200, device=torch.device("cpu")):
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
@@ -140,27 +126,3 @@ def train_model(model, train_loader, num_epochs=200, device=torch.device("cpu"))
     save_path = "multi_target_finance_model.pth"
     torch.save(model.state_dict(), save_path)
     print(f"Model saved to {save_path}")
-
-if __name__ == "__main__":
-    # For demonstration, training on dummy data:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    num_samples = 1000       # number of samples
-    seq_len = 20             # time window length
-    num_features_ts = 5      # [Open, High, Low, Close, Volume]
-    num_features_tab = 10    # fundamental features
-    num_targets = 5          # predicting [Open, High, Low, Close, Volume]
-
-    time_series_data, tab_data, targets = market_data.fetch_data()
-
-    dataset = FinanceDataset(time_series_data, tab_data, targets)
-    train_loader = DataLoader(dataset, batch_size=32, shuffle=True)
-
-    hidden_size_time_series = 64
-    num_layers_time_series = 2
-    hidden_size_tab = 32
-
-    model = MultiTargetFinanceModel(num_features_ts, hidden_size_time_series, num_layers_time_series,
-                                    num_features_tab, hidden_size_tab)
-    model.to(device)
-    train_model(model, train_loader, num_epochs=500, device=device)
