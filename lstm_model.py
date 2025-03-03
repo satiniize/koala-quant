@@ -1,8 +1,6 @@
 # model.py (MultiTarget Version)
 import torch
 import torch.nn as nn
-import torch.optim as optim
-import data_loader
 
 class Attention(nn.Module):
     def __init__(self, hidden_size):
@@ -17,7 +15,7 @@ class Attention(nn.Module):
         self.scale = torch.sqrt(torch.FloatTensor([hidden_size]))
 
     def forward(self, x):
-    	# x shape: (batch, seq_len, hidden_size)
+     # x shape: (batch, seq_len, hidden_size)
         Q = self.query(x)  # (batch, seq_len, hidden_size)
         K = self.key(x)    # (batch, seq_len, hidden_size)
         V = self.value(x)  # (batch, seq_len, hidden_size)
@@ -32,8 +30,7 @@ class Attention(nn.Module):
         return context
 
 class MultiTargetFinanceModel(nn.Module):
-    def __init__(self, input_size_time_series, hidden_size_time_series, num_layers_time_series,
-                 input_size_tab, hidden_size_tab):
+    def __init__(self, input_size_time_series, hidden_size_time_series, num_layers_time_series):
         """
         This model predicts five outputs: Open, High, Low, Close, and Volume.
         """
@@ -47,40 +44,34 @@ class MultiTargetFinanceModel(nn.Module):
             nn.ReLU(),
             nn.Dropout(0.2)
         )
-        self.fc_tab = nn.Sequential(
-            nn.Linear(input_size_tab, hidden_size_tab),
-            nn.ReLU(),
-            nn.Dropout(0.2)
-        )
-        combined_input_size = hidden_size_time_series // 2 + hidden_size_tab
 
         # Separate prediction heads for each target variable
         self.head_open = nn.Sequential(
-            nn.Linear(combined_input_size, hidden_size_time_series),
+            nn.Linear(hidden_size_time_series // 2, hidden_size_time_series),
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(hidden_size_time_series, 1)
         )
         self.head_high = nn.Sequential(
-            nn.Linear(combined_input_size, hidden_size_time_series),
+            nn.Linear(hidden_size_time_series // 2, hidden_size_time_series),
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(hidden_size_time_series, 1)
         )
         self.head_low = nn.Sequential(
-            nn.Linear(combined_input_size, hidden_size_time_series),
+            nn.Linear(hidden_size_time_series // 2, hidden_size_time_series),
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(hidden_size_time_series, 1)
         )
         self.head_close = nn.Sequential(
-            nn.Linear(combined_input_size, hidden_size_time_series),
+            nn.Linear(hidden_size_time_series // 2, hidden_size_time_series),
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(hidden_size_time_series, 1)
         )
         self.head_volume = nn.Sequential(
-            nn.Linear(combined_input_size, hidden_size_time_series),
+            nn.Linear(hidden_size_time_series // 2, hidden_size_time_series),
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(hidden_size_time_series, 1)
@@ -91,38 +82,13 @@ class MultiTargetFinanceModel(nn.Module):
         ts_context = self.attention(lstm_out)
         ts_context = ts_context[:, -1, :]# (batch, hidden_size_time_series)
         ts_features = self.fc_time_series(ts_context)             # (batch, hidden_size_time_series//2)
-        tab_features = self.fc_tab(x_tab)                # (batch, hidden_size_tab)
-        combined_features = torch.cat([ts_features, tab_features], dim=1)
 
-        pred_open = self.head_open(combined_features)
-        pred_high = self.head_high(combined_features)
-        pred_low  = self.head_low(combined_features)
-        pred_close = self.head_close(combined_features)
-        pred_volume = self.head_volume(combined_features)
+        pred_open = self.head_open(ts_features)
+        pred_high = self.head_high(ts_features)
+        pred_low  = self.head_low(ts_features)
+        pred_close = self.head_close(ts_features)
+        pred_volume = self.head_volume(ts_features)
 
         # Concatenate outputs: (batch, 5)
         predictions = torch.cat([pred_open, pred_high, pred_low, pred_close, pred_volume], dim=1)
         return predictions
-
-def train_model(model, train_loader, num_epochs=200, device=torch.device("cpu")):
-    criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.9)
-
-    model.train()
-    for epoch in range(num_epochs):
-        epoch_loss = 0.0
-        for x_ts, x_tab, y in train_loader:
-            x_ts, x_tab, y = x_ts.to(device), x_tab.to(device), y.to(device)
-            optimizer.zero_grad()
-            outputs = model(x_ts, x_tab)
-            loss = criterion(outputs, y)
-            loss.backward()
-            optimizer.step()
-            epoch_loss += loss.item()
-        scheduler.step()
-        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss/len(train_loader):.6f}")
-
-    save_path = "multi_target_finance_model.pth"
-    torch.save(model.state_dict(), save_path)
-    print(f"Model saved to {save_path}")

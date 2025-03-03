@@ -1,0 +1,23 @@
+[model]
+# Architecture
+input_size_time_series = 5
+hidden_size_time_series = 64
+num_layers_time_series = 4
+dropout = 0.2
+
+[training]
+batch_size = 32
+num_epochs = 500
+learning_rate = 0.001
+lr_scheduler_step = 20
+lr_scheduler_gamma = 0.9
+
+[data]
+sequence_length = 30
+train_test_split = 0.8
+features = ["Open", "High", "Low", "Close", "Volume"]
+
+[attention]
+hidden_size = 64
+num_heads = 1
+dropout = 0.2

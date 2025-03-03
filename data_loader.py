@@ -2,7 +2,7 @@
 import numpy as np
 import yfinance as yf
 from torch.utils.data import Dataset, DataLoader
-
+import torch
 # Data Processing
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
@@ -17,24 +17,25 @@ def get_ticker_data(ticker_symbol: str = "^JKSE", period: str = "2y"):
 	price_history.reset_index(inplace=True)
 
 	# Calculate integrated features
-	stock_info = stock_ticker.info
-	fundamental_metrics = [
-		'marketCap', 'beta', 'dividendYield', 'trailingPE',
-		'forwardPE', 'bookValue', 'priceToBook', 'returnOnEquity',
-		'debtToEquity', 'freeCashflow'
-	]
+	# stock_info = stock_ticker.info
+	# fundamental_metrics = [
+	# 	'marketCap', 'beta', 'dividendYield', 'trailingPE',
+	# 	'forwardPE', 'bookValue', 'priceToBook', 'returnOnEquity',
+	# 	'debtToEquity', 'freeCashflow'
+	# ]
 
 	# Create tabular data vector
-	fundamental_values = []
-	for metric in fundamental_metrics:
-		try:
-			fundamental_values.append(float(stock_info.get(metric, 0)))
-		except:
-			fundamental_values.append(0.0)
+	# fundamental_values = []
+	# for metric in fundamental_metrics:
+	# 	try:
+	# 		fundamental_values.append(float(stock_info.get(metric, 0)))
+	# 	except:
+	# 		fundamental_values.append(0.0)
 
-	fundamental_data = np.array(fundamental_values)
+	# fundamental_data = np.array(fundamental_values)
 
-	return price_history, fundamental_data # Return both history and tabular data
+	# return price_history, fundamental_data # Return both history and tabular data
+	return price_history # Return both history and tabular data
 
 def normalize_ticker_data(data: pd.DataFrame):
 	normalized_data = data.copy()
@@ -68,28 +69,20 @@ def create_sequence_data(history: pd.DataFrame, window_size=30):
 
 	return time_series_data, targets
 
-# Custom dataset for multi-target prediction
 class FinanceDataset(Dataset):
-	def __init__(self, ts_data, tab_data, targets):
+	def __init__(self, ts_data, targets):
 		self.ts_data = torch.from_numpy(ts_data).float()
-		self.tab_data = torch.from_numpy(tab_data).float()
 		self.targets = torch.from_numpy(targets).float()
 
 	def __len__(self):
 		return len(self.targets)
 
 	def __getitem__(self, idx):
-		return self.ts_data[idx], self.tab_data[idx], self.targets[idx]
-
-# def get_recent_data(ticker_symbol="ITMG.JK", period="2y"):
-# 	ticker = yf.Ticker(ticker_symbol)
-# 	hist = ticker.history(period=period)
-# 	hist = hist[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
-# 	hist.reset_index(inplace=True)
-# 	return hist
+		return self.ts_data[idx], self.targets[idx]
 
 if __name__ == "__main__":
-	price_history, fundamental_metrics = get_ticker_data()
+	# price_history, fundamental_metrics = get_ticker_data()
+	price_history = get_ticker_data()
 	normalized_history, scalers = normalize_ticker_data(price_history)
 	time_series_data, targets = create_sequence_data(normalized_history)
 	pprint(targets[0])

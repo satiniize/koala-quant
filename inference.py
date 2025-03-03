@@ -1,65 +1,43 @@
+# inference.py
 import torch
-# import yfinance as yf
 import numpy as np
-from sklearn.preprocessing import StandardScaler
 from lstm_model import MultiTargetFinanceModel
+import data_loader
 
-def prepare_scalers(hist):
-    # Fit a scaler for the time series features
+def get_initial_window(normalized_history, window_size=30):
     features = ['Open', 'High', 'Low', 'Close', 'Volume']
-    X = hist[features].values.astype(float)
-    ts_scaler = StandardScaler()
-    ts_scaler.fit(X)
-
-    # For multi-target prediction, we assume targets are the same features
-    target_scaler = StandardScaler()
-    target_scaler.fit(X)
-
-    return ts_scaler, target_scaler
-
-def get_initial_window(hist, window_size=20):
-    features = ['Open', 'High', 'Low', 'Close', 'Volume']
-    window = hist.iloc[-window_size:][features].values.astype(float)
-    # window_scaled = ts_scaler.transform(window)
+    window = normalized_history.iloc[-window_size:][features].values.astype(float)
     return window
 
-def get_tab_vector(ticker_symbol="ITMG.JK"):
-	# TODO: Move this to market_data
-    ticker = yf.Ticker(ticker_symbol)
-    info = ticker.info
-    numerical_keys = ['marketCap', 'beta', 'dividendYield', 'trailingPE',
-                      'forwardPE', 'bookValue', 'priceToBook', 'returnOnEquity',
-                      'debtToEquity', 'freeCashflow']
-    tab_vector = []
-    for key in numerical_keys:
-        try:
-            tab_vector.append(float(info.get(key, 0)))
-        except:
-            tab_vector.append(0.0)
-    tab_vector = np.array(tab_vector).reshape(1, -1)
-    return tab_vector
-
-def predict_future_values(model, initial_window, tab_vector, num_days=5):
+def predict_future_values(model, initial_window, scalers, num_days=5):
+    price_scaler, volume_scaler = scalers
     predictions = []
     current_window = initial_window.copy()
     device = next(model.parameters()).device
 
     for i in range(num_days):
         input_time_series = torch.tensor(current_window, dtype=torch.float32).unsqueeze(0).to(device)
-        input_tab = torch.tensor(tab_vector, dtype=torch.float32).to(device)
+
         model.eval()
         with torch.no_grad():
-            preds_norm = model(input_time_series, input_tab)  # Shape: (1, 5)
-        preds_norm = preds_norm.cpu().numpy()[0]
-        # Inverse-transform predictions to original scale
-        # preds_original = target_scaler.inverse_transform(preds_norm.reshape(1, -1))[0]
-        # predictions.append(preds_original)
-        predictions.append(preds_norm)
+            preds_norm = model(input_time_series, None)  # Shape: (1, 5)
+            preds_norm = preds_norm.cpu().numpy()[0]
 
-        # Update window: assume new day's features are those predicted
-        new_day_raw = preds_norm  # [Open, High, Low, Close, Volume]
-        # new_day_scaled = ts_scaler.transform(new_day_raw.reshape(1, -1))[0]
-        current_window = np.vstack([current_window[1:], new_day_raw])
+        # Inverse transform predictions
+        preds_original = np.zeros_like(preds_norm)
+
+        # Inverse transform OHLC (first 4 values)
+        ohlc_values = preds_norm[:4].reshape(-1, 1)
+        preds_original[:4] = price_scaler.inverse_transform(ohlc_values).flatten()
+
+        # Inverse transform Volume (last value)
+        volume_value = np.array([[preds_norm[4]]])  # Reshape to 2D array
+        preds_original[4] = volume_scaler.inverse_transform(volume_value).item()
+
+        predictions.append(preds_original)
+
+        # Update window with normalized predictions for next iteration
+        current_window = np.vstack([current_window[1:], preds_norm])
 
     return predictions
 
@@ -68,27 +46,38 @@ if __name__ == "__main__":
     window_size = 30
     num_future_days = 5
 
-    # Fetch historical data and prepare the scalers and initial window
-    hist = get_recent_data(ticker_symbol=ticker_symbol, period="2y")
-    # ts_scaler, target_scaler = prepare_scalers(hist)
-    initial_window = get_initial_window(hist, window_size=window_size)
-    tab_vector = get_tab_vector(ticker_symbol=ticker_symbol)
+    # Get data and normalize it
+    price_history = data_loader.get_ticker_data(ticker_symbol)
+    normalized_history, scalers = data_loader.normalize_ticker_data(price_history)
 
+    # Print some statistics about the original data
+    print("\nOriginal Data Statistics:")
+    print(price_history.describe())
+
+    # Get initial window from normalized data
+    initial_window = get_initial_window(normalized_history, window_size=window_size)
+
+    # Setup model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    num_features_ts = 5  # Open, High, Low, Close, Volume
+    num_features_ts = 5
     hidden_size_ts = 64
-    num_layers_ts = 2
-    num_features_tab = tab_vector.shape[1]
-    hidden_size_tab = 32
+    num_layers_ts = 4
 
-    # Load the multi-target model
-    model = MultiTargetFinanceModel(num_features_ts, hidden_size_ts, num_layers_ts,
-                                    num_features_tab, hidden_size_tab)
+    # Load the model
+    model = MultiTargetFinanceModel(num_features_ts, hidden_size_ts, num_layers_ts)
     model.to(device)
     model.load_state_dict(torch.load("multi_target_finance_model.pth", map_location=device))
-    print("Multi-target model loaded.")
+    print("\nModel loaded successfully.")
 
-    future_predictions = predict_future_values(model, initial_window, tab_vector, num_days=num_future_days)
+    # Make predictions
+    future_predictions = predict_future_values(model, initial_window, scalers, num_days=num_future_days)
+
+    # Print predictions
+    print("\nPredictions:")
     for i, preds in enumerate(future_predictions, start=1):
-        print(f"Day {i} predictions: Open={preds[0]:,.2f}, High={preds[1]:,.2f}, "
-              f"Low={preds[2]:,.2f}, Close={preds[3]:,.2f}, Volume={preds[4]:,.2f}")
+        print(f"\nDay {i}:")
+        print(f"  Open:   {preds[0]:,.2f}")
+        print(f"  High:   {preds[1]:,.2f}")
+        print(f"  Low:    {preds[2]:,.2f}")
+        print(f"  Close:  {preds[3]:,.2f}")
+        print(f"  Volume: {preds[4]:,.0f}")
