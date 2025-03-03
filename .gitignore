@@ -2,4 +2,3 @@ env
 multi_target_finance_model.pth
 *.npy
 __pycache__
-lstm/__pycache__

@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import market_data
+import data_loader
 from torch.utils.data import Dataset, DataLoader
 
 class Attention(nn.Module):
@@ -144,7 +144,7 @@ def train_model(model, train_loader, num_epochs=200, device=torch.device("cpu"))
 if __name__ == "__main__":
     # For demonstration, training on dummy data:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    import numpy as np
+
     num_samples = 1000       # number of samples
     seq_len = 20             # time window length
     num_features_ts = 5      # [Open, High, Low, Close, Volume]
@@ -152,9 +152,6 @@ if __name__ == "__main__":
     num_targets = 5          # predicting [Open, High, Low, Close, Volume]
 
     time_series_data, tab_data, targets = market_data.fetch_data()
-    # ts_data = np.random.randn(num_samples, seq_len, num_features_ts)
-    # tab_data = np.random.randn(num_samples, num_features_tab)
-    # targets = np.random.randn(num_samples, num_targets)
 
     dataset = FinanceDataset(time_series_data, tab_data, targets)
     train_loader = DataLoader(dataset, batch_size=32, shuffle=True)
