@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import market_data
 from torch.utils.data import Dataset, DataLoader
 
 class Attention(nn.Module):
@@ -32,18 +33,18 @@ class Attention(nn.Module):
         return context
 
 class MultiTargetFinanceModel(nn.Module):
-    def __init__(self, input_size_ts, hidden_size_ts, num_layers_ts,
+    def __init__(self, input_size_time_series, hidden_size_time_series, num_layers_time_series,
                  input_size_tab, hidden_size_tab):
         """
         This model predicts five outputs: Open, High, Low, Close, and Volume.
         """
         super(MultiTargetFinanceModel, self).__init__()
         # Shared encoder
-        self.lstm = nn.LSTM(input_size=input_size_ts, hidden_size=hidden_size_ts,
-                            num_layers=num_layers_ts, batch_first=True, dropout=0.2)
-        self.attention = Attention(hidden_size_ts)
-        self.fc_ts = nn.Sequential(
-            nn.Linear(hidden_size_ts, hidden_size_ts // 2),
+        self.lstm = nn.LSTM(input_size=input_size_time_series, hidden_size=hidden_size_time_series,
+                            num_layers=num_layers_time_series, batch_first=True, dropout=0.2)
+        self.attention = Attention(hidden_size_time_series)
+        self.fc_time_series = nn.Sequential(
+            nn.Linear(hidden_size_time_series, hidden_size_time_series // 2),
             nn.ReLU(),
             nn.Dropout(0.2)
         )
@@ -52,45 +53,45 @@ class MultiTargetFinanceModel(nn.Module):
             nn.ReLU(),
             nn.Dropout(0.2)
         )
-        combined_input_size = hidden_size_ts // 2 + hidden_size_tab
+        combined_input_size = hidden_size_time_series // 2 + hidden_size_tab
 
         # Separate prediction heads for each target variable
         self.head_open = nn.Sequential(
-            nn.Linear(combined_input_size, hidden_size_ts),
+            nn.Linear(combined_input_size, hidden_size_time_series),
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(hidden_size_ts, 1)
+            nn.Linear(hidden_size_time_series, 1)
         )
         self.head_high = nn.Sequential(
-            nn.Linear(combined_input_size, hidden_size_ts),
+            nn.Linear(combined_input_size, hidden_size_time_series),
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(hidden_size_ts, 1)
+            nn.Linear(hidden_size_time_series, 1)
         )
         self.head_low = nn.Sequential(
-            nn.Linear(combined_input_size, hidden_size_ts),
+            nn.Linear(combined_input_size, hidden_size_time_series),
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(hidden_size_ts, 1)
+            nn.Linear(hidden_size_time_series, 1)
         )
         self.head_close = nn.Sequential(
-            nn.Linear(combined_input_size, hidden_size_ts),
+            nn.Linear(combined_input_size, hidden_size_time_series),
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(hidden_size_ts, 1)
+            nn.Linear(hidden_size_time_series, 1)
         )
         self.head_volume = nn.Sequential(
-            nn.Linear(combined_input_size, hidden_size_ts),
+            nn.Linear(combined_input_size, hidden_size_time_series),
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(hidden_size_ts, 1)
+            nn.Linear(hidden_size_time_series, 1)
         )
 
     def forward(self, x_ts, x_tab):
-        lstm_out, _ = self.lstm(x_ts)                    # (batch, seq_len, hidden_size_ts)
+        lstm_out, _ = self.lstm(x_ts)                    # (batch, seq_len, hidden_size_time_series)
         ts_context = self.attention(lstm_out)
-        ts_context = ts_context[:, -1, :]# (batch, hidden_size_ts)
-        ts_features = self.fc_ts(ts_context)             # (batch, hidden_size_ts//2)
+        ts_context = ts_context[:, -1, :]# (batch, hidden_size_time_series)
+        ts_features = self.fc_time_series(ts_context)             # (batch, hidden_size_time_series//2)
         tab_features = self.fc_tab(x_tab)                # (batch, hidden_size_tab)
         combined_features = torch.cat([ts_features, tab_features], dim=1)
 
@@ -150,18 +151,19 @@ if __name__ == "__main__":
     num_features_tab = 10    # fundamental features
     num_targets = 5          # predicting [Open, High, Low, Close, Volume]
 
-    ts_data = np.random.randn(num_samples, seq_len, num_features_ts)
-    tab_data = np.random.randn(num_samples, num_features_tab)
-    targets = np.random.randn(num_samples, num_targets)
+    time_series_data, tab_data, targets = market_data.fetch_data()
+    # ts_data = np.random.randn(num_samples, seq_len, num_features_ts)
+    # tab_data = np.random.randn(num_samples, num_features_tab)
+    # targets = np.random.randn(num_samples, num_targets)
 
-    dataset = FinanceDataset(ts_data, tab_data, targets)
+    dataset = FinanceDataset(time_series_data, tab_data, targets)
     train_loader = DataLoader(dataset, batch_size=32, shuffle=True)
 
-    hidden_size_ts = 64
-    num_layers_ts = 2
+    hidden_size_time_series = 64
+    num_layers_time_series = 2
     hidden_size_tab = 32
 
-    model = MultiTargetFinanceModel(num_features_ts, hidden_size_ts, num_layers_ts,
+    model = MultiTargetFinanceModel(num_features_ts, hidden_size_time_series, num_layers_time_series,
                                     num_features_tab, hidden_size_tab)
     model.to(device)
     train_model(model, train_loader, num_epochs=500, device=device)
