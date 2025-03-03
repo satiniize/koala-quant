@@ -11,50 +11,62 @@ import pandas as pd
 from pprint import pprint
 
 def get_ticker_data(ticker_symbol: str = "^JKSE", period: str = "2y"):
-	ticker = yf.Ticker(ticker_symbol)
-	history = ticker.history(period=period)
-	history = history[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
-	history.reset_index(inplace=True)
-	return history # Pandas DataFrame
+	stock_ticker = yf.Ticker(ticker_symbol)
+	price_history = stock_ticker.history(period=period)
+	price_history = price_history[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
+	price_history.reset_index(inplace=True)
+
+	# Calculate integrated features
+	stock_info = stock_ticker.info
+	fundamental_metrics = [
+		'marketCap', 'beta', 'dividendYield', 'trailingPE',
+		'forwardPE', 'bookValue', 'priceToBook', 'returnOnEquity',
+		'debtToEquity', 'freeCashflow'
+	]
+
+	# Create tabular data vector
+	fundamental_values = []
+	for metric in fundamental_metrics:
+		try:
+			fundamental_values.append(float(stock_info.get(metric, 0)))
+		except:
+			fundamental_values.append(0.0)
+
+	fundamental_data = np.array(fundamental_values)
+
+	return price_history, fundamental_data # Return both history and tabular data
 
 def normalize_ticker_data(data: pd.DataFrame):
-	scaler = StandardScaler()
 	normalized_data = data.copy()
-	normalized_data[['Open', 'High', 'Low', 'Close', 'Volume']] = scaler.fit_transform(data[['Open', 'High', 'Low', 'Close', 'Volume']])
-	return normalized_data, scaler
+	price_columns = ['Open', 'High', 'Low', 'Close']
+
+	# Normalize OHLC together across both time and feature dimensions
+	price_scaler = StandardScaler()
+	flattened_prices = data[price_columns].values.ravel()
+	price_scaler.fit(flattened_prices.reshape(-1, 1))
+
+	for col in price_columns:
+		normalized_data[col] = price_scaler.transform(data[[col]])
+
+	# Normalize volume separately
+	volume_scaler = StandardScaler()
+	normalized_data['Volume'] = volume_scaler.fit_transform(data[['Volume']])
+
+	return normalized_data, (price_scaler, volume_scaler) #TODO: Double check if this is still open high low close volume
 
 def create_sequence_data(history: pd.DataFrame, window_size=30):
-	time_series_data 	= []
-	targets 			= []
+	time_series_data = []
+	targets = []
 	for i in range(len(history) - window_size - 1):
-		window_array 	= history.iloc[i:i+window_size][['Open', 'High', 'Low', 'Close', 'Volume']].values.astype(float)
+		window_array = history.iloc[i:i+window_size][['Open', 'High', 'Low', 'Close', 'Volume']].values.astype(float)
 		time_series_data.append(window_array)
-		target 			= history.iloc[i+window_size][['Open', 'High', 'Low', 'Close', 'Volume']].values.astype(float)
+		target = history.iloc[i+window_size][['Open', 'High', 'Low', 'Close', 'Volume']].values.astype(float)
 		targets.append(target)
 
-	time_series_data 	= np.array(time_series_data)
-	targets 			= np.array(targets)  # Now targets have shape: (num_samples, 5)
+	time_series_data = np.array(time_series_data)
+	targets = np.array(targets)  # Now targets have shape: (num_samples, 5)
 
-	# Normalize time series data across the feature dimension
-	print(time_series_data.shape)
-	num_samples, seq_len, num_features = time_series_data.shape
-
-	# Extract tabular features
-	info = yf.Ticker(history.index[0].strftime('%Y-%m-%d')).info
-	numerical_keys = ['marketCap', 'beta', 'dividendYield', 'trailingPE',
-					'forwardPE', 'bookValue', 'priceToBook', 'returnOnEquity',
-					'debtToEquity', 'freeCashflow']
-	tab_vector = []
-	for key in numerical_keys:
-		try:
-			tab_vector.append(float(info.get(key, 0)))
-		except:
-			tab_vector.append(0.0)
-
-	tab_vector = np.array(tab_vector).reshape(1, -1)
-	tab_data = np.repeat(tab_vector, num_samples, axis=0)
-
-	return time_series_data, tab_data, targets
+	return time_series_data, targets
 
 # Custom dataset for multi-target prediction
 class FinanceDataset(Dataset):
@@ -69,16 +81,15 @@ class FinanceDataset(Dataset):
 	def __getitem__(self, idx):
 		return self.ts_data[idx], self.tab_data[idx], self.targets[idx]
 
-def get_recent_data(ticker_symbol="ITMG.JK", period="2y"):
-	ticker = yf.Ticker(ticker_symbol)
-	hist = ticker.history(period=period)
-	hist = hist[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
-	hist.reset_index(inplace=True)
-	return hist
+# def get_recent_data(ticker_symbol="ITMG.JK", period="2y"):
+# 	ticker = yf.Ticker(ticker_symbol)
+# 	hist = ticker.history(period=period)
+# 	hist = hist[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
+# 	hist.reset_index(inplace=True)
+# 	return hist
 
 if __name__ == "__main__":
-	ticker_data = get_ticker_data()
-	normalized_ticker_data, scaler = normalize_ticker_data(ticker_data)
-	pprint(ticker_data)
-	# time_series_data, tab_data, targets = fetch_data()
-	# print(time_series_data.shape)
+	price_history, fundamental_metrics = get_ticker_data()
+	normalized_history, scalers = normalize_ticker_data(price_history)
+	time_series_data, targets = create_sequence_data(normalized_history)
+	pprint(targets[0])
