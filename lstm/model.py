@@ -7,12 +7,28 @@ from torch.utils.data import Dataset, DataLoader
 class Attention(nn.Module):
     def __init__(self, hidden_size):
         super(Attention, self).__init__()
-        self.attention = nn.Linear(hidden_size, 1)
+        self.hidden_size = hidden_size
 
-    def forward(self, lstm_output):
-        weights = self.attention(lstm_output)  # (batch, seq_len, 1)
-        weights = torch.softmax(weights, dim=1)
-        context = torch.sum(weights * lstm_output, dim=1)
+        # Define query, key, and value transformations
+        self.query = nn.Linear(hidden_size, hidden_size)
+        self.key = nn.Linear(hidden_size, hidden_size)
+        self.value = nn.Linear(hidden_size, hidden_size)
+
+        self.scale = torch.sqrt(torch.FloatTensor([hidden_size]))
+
+    def forward(self, x):
+    	# x shape: (batch, seq_len, hidden_size)
+        Q = self.query(x)  # (batch, seq_len, hidden_size)
+        K = self.key(x)    # (batch, seq_len, hidden_size)
+        V = self.value(x)  # (batch, seq_len, hidden_size)
+
+        # Scaled dot-product attention
+        attention = torch.matmul(Q, K.transpose(-2, -1)) / self.scale
+        attention = torch.softmax(attention, dim=-1)
+
+        # Apply attention weights to values
+        context = torch.matmul(attention, V)
+
         return context
 
 class MultiTargetFinanceModel(nn.Module):
@@ -72,7 +88,8 @@ class MultiTargetFinanceModel(nn.Module):
 
     def forward(self, x_ts, x_tab):
         lstm_out, _ = self.lstm(x_ts)                    # (batch, seq_len, hidden_size_ts)
-        ts_context = self.attention(lstm_out)            # (batch, hidden_size_ts)
+        ts_context = self.attention(lstm_out)
+        ts_context = ts_context[:, -1, :]# (batch, hidden_size_ts)
         ts_features = self.fc_ts(ts_context)             # (batch, hidden_size_ts//2)
         tab_features = self.fc_tab(x_tab)                # (batch, hidden_size_tab)
         combined_features = torch.cat([ts_features, tab_features], dim=1)
@@ -147,4 +164,4 @@ if __name__ == "__main__":
     model = MultiTargetFinanceModel(num_features_ts, hidden_size_ts, num_layers_ts,
                                     num_features_tab, hidden_size_tab)
     model.to(device)
-    train_model(model, train_loader, num_epochs=200, device=device)
+    train_model(model, train_loader, num_epochs=500, device=device)
