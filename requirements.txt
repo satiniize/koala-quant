@@ -2,5 +2,7 @@ matplotlib==3.10.1
 numpy==2.2.3
 pandas==2.2.3
 scikit_learn==1.6.1
+tenacity==9.0.0
+tomli==2.2.1
 torch==2.6.0
 yfinance==0.2.54
