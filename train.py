@@ -44,6 +44,7 @@ if __name__ == "__main__":
 	input_size_time_series = config['model']['input_size_time_series']      # [Open, High, Low, Close, Volume]
 	hidden_size_time_series = config['model']['hidden_size_time_series']
 	num_layers_time_series = config['model']['num_layers_time_series']
+	dropout = config['model']['dropout']
 
 	# Training
 	num_epochs = config['training']['num_epochs']
@@ -54,6 +55,7 @@ if __name__ == "__main__":
 
 	# Data
 	training_tickers = config['data']['training_tickers']
+	sequence_length = config['data']['sequence_length']
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -64,7 +66,7 @@ if __name__ == "__main__":
 	for ticker_info in training_tickers:
 		price_history = data_loader.get_ticker_data(ticker_info["ticker"], period=ticker_info["period"])
 		normalized_history, scalers = data_loader.normalize_ticker_data(price_history)
-		time_series_data, targets = data_loader.create_sequence_data(normalized_history)
+		time_series_data, targets = data_loader.create_sequence_data(normalized_history, sequence_length)
 		all_time_series_data.append(time_series_data)
 		all_targets.append(targets)
 
@@ -83,6 +85,7 @@ if __name__ == "__main__":
 		input_size_time_series,
 		hidden_size_time_series,
 		num_layers_time_series,
+		dropout
 	)
 	model.to(device)
 	train_model(

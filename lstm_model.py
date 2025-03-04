@@ -30,50 +30,50 @@ class Attention(nn.Module):
         return context
 
 class MultiTargetFinanceModel(nn.Module):
-    def __init__(self, input_size_time_series, hidden_size_time_series, num_layers_time_series):
+    def __init__(self, input_size_time_series, hidden_size_time_series, num_layers_time_series, dropout=0.2):
         """
         This model predicts five outputs: Open, High, Low, Close, and Volume.
         """
         super(MultiTargetFinanceModel, self).__init__()
         # Shared encoder
         self.lstm = nn.LSTM(input_size=input_size_time_series, hidden_size=hidden_size_time_series,
-                            num_layers=num_layers_time_series, batch_first=True, dropout=0.2)
+                            num_layers=num_layers_time_series, batch_first=True, dropout=dropout)
         self.attention = Attention(hidden_size_time_series)
         self.fc_time_series = nn.Sequential(
             nn.Linear(hidden_size_time_series, hidden_size_time_series // 2),
             nn.ReLU(),
-            nn.Dropout(0.2)
+            nn.Dropout(dropout)
         )
 
         # Separate prediction heads for each target variable
         self.head_open = nn.Sequential(
             nn.Linear(hidden_size_time_series // 2, hidden_size_time_series),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(dropout),
             nn.Linear(hidden_size_time_series, 1)
         )
         self.head_high = nn.Sequential(
             nn.Linear(hidden_size_time_series // 2, hidden_size_time_series),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(dropout),
             nn.Linear(hidden_size_time_series, 1)
         )
         self.head_low = nn.Sequential(
             nn.Linear(hidden_size_time_series // 2, hidden_size_time_series),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(dropout),
             nn.Linear(hidden_size_time_series, 1)
         )
         self.head_close = nn.Sequential(
             nn.Linear(hidden_size_time_series // 2, hidden_size_time_series),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(dropout),
             nn.Linear(hidden_size_time_series, 1)
         )
         self.head_volume = nn.Sequential(
             nn.Linear(hidden_size_time_series // 2, hidden_size_time_series),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(dropout),
             nn.Linear(hidden_size_time_series, 1)
         )
 

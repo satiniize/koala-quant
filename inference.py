@@ -7,7 +7,6 @@ import torch
 import numpy as np
 from lstm_model import MultiTargetFinanceModel
 import data_loader
-import plot
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -51,12 +50,12 @@ def predict_future_values(model, initial_window, scalers, num_days=5):
 # Compare predictions with actual data
 def compare_predictions(price_history, future_predictions, window_size, split):
     # Extract historical Open prices
-    predicted_opens = [pred[0] for pred in future_predictions]
+    predicted_opens = [pred[3] for pred in future_predictions]
 
     n = int(len(price_history) * split) # Data cutoff
     n_predictions = len(predicted_opens)
 
-    historical_opens = price_history['Open'].values[n-window_size:n+n_predictions]
+    historical_opens = price_history['Close'].values[n-window_size:n+n_predictions]
     # Create x-axis values
     historical_x = range(window_size + n_predictions)
     prediction_x = range(window_size, window_size + n_predictions)
@@ -102,9 +101,12 @@ def compare_predictions(price_history, future_predictions, window_size, split):
     plt.show()
 
 if __name__ == "__main__":
-    ticker_symbol = "PTBA.JK"
-    window_size = 30
-    num_future_days = 64
+    with open('model_hyperparam.toml', 'rb') as f:
+        config = tomllib.load(f)
+
+    ticker_symbol = "ASII.JK"
+    window_size = config["data"]["sequence_length"]
+    num_future_days = config["prediction"]["future_days"]
 
     # Get data and normalize it
     price_history = data_loader.get_ticker_data(ticker_symbol)
@@ -118,15 +120,18 @@ if __name__ == "__main__":
     # Setup model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    with open('model_hyperparam.toml', 'rb') as f:
-        config = tomllib.load(f)
-
     input_size_time_series = config['model']['input_size_time_series']      # [Open, High, Low, Close, Volume]
     hidden_size_time_series = config['model']['hidden_size_time_series']
     num_layers_time_series = config['model']['num_layers_time_series']
+    dropout = config['model']['dropout']
 
     # Load the model
-    model = MultiTargetFinanceModel(input_size_time_series, hidden_size_time_series, num_layers_time_series)
+    model = MultiTargetFinanceModel(
+        input_size_time_series,
+        hidden_size_time_series,
+        num_layers_time_series,
+        dropout
+    )
     model.to(device)
     model.load_state_dict(torch.load("multi_target_finance_model.pth", map_location=device))
     print("\nModel loaded successfully.")
