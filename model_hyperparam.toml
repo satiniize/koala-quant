@@ -34,4 +34,5 @@ num_heads = 1
 dropout = 0.2
 
 [prediction]
+ticker_symbol = "ASII.JK"
 future_days = 64

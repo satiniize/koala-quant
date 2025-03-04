@@ -48,14 +48,17 @@ def predict_future_values(model, initial_window, scalers, num_days=5):
     return predictions
 
 # Compare predictions with actual data
-def compare_predictions(price_history, future_predictions, window_size, split):
-    # Extract historical Open prices
-    predicted_opens = [pred[3] for pred in future_predictions]
+def compare_predictions(price_history, future_predictions, window_size, offset=0):
+    # Extract historical Close prices
+    predicted_close = [pred[3] for pred in future_predictions]
 
-    n = int(len(price_history) * split) # Data cutoff
-    n_predictions = len(predicted_opens)
+    # n = int(len(price_history) * split) # Data cutoff
+    n_predictions = len(predicted_close)
+    n = len(price_history) - (window_size + n_predictions) - offset # Data cutoff
 
-    historical_opens = price_history['Close'].values[n-window_size:n+n_predictions]
+    # historical_opens = price_history['Close'].values[n-window_size:n+n_predictions]
+    historical_close = price_history['Close'].values
+    historical_close = historical_close[n:len(historical_close)-offset]
     # Create x-axis values
     historical_x = range(window_size + n_predictions)
     prediction_x = range(window_size, window_size + n_predictions)
@@ -64,24 +67,24 @@ def compare_predictions(price_history, future_predictions, window_size, split):
     plt.figure(figsize=(15, 8))
 
     # Plot historical data
-    plt.plot(historical_x, historical_opens,
-             label='Historical Open Prices',
+    plt.plot(historical_x, historical_close,
+             label='Historical Close Prices',
              color='blue',
              linewidth=2)
 
     # Plot predictions
-    plt.plot(prediction_x, predicted_opens,
-             label='Predicted Open Prices',
+    plt.plot(prediction_x, predicted_close,
+             label='Predicted Close Prices',
              color='red',
              linestyle='--',
              linewidth=2)
 
     # Add markers at data points
-    plt.scatter(historical_x, historical_opens, color='blue', s=50)
-    plt.scatter(prediction_x, predicted_opens, color='red', s=50)
+    plt.scatter(historical_x, historical_close, color='blue', s=50)
+    plt.scatter(prediction_x, predicted_close, color='red', s=50)
 
     # Add labels and title
-    plt.title(f'Historical and Predicted Open Prices for {ticker_symbol}',
+    plt.title(f'Historical and Predicted Close Prices for {ticker_symbol}',
               fontsize=14,
               pad=20)
     plt.xlabel('Days', fontsize=12)
@@ -104,15 +107,15 @@ if __name__ == "__main__":
     with open('model_hyperparam.toml', 'rb') as f:
         config = tomllib.load(f)
 
-    ticker_symbol = "ASII.JK"
+    offset = 64
+    ticker_symbol = "BMRI.JK"
     window_size = config["data"]["sequence_length"]
     num_future_days = config["prediction"]["future_days"]
 
     # Get data and normalize it
     price_history = data_loader.get_ticker_data(ticker_symbol)
     normalized_history, scalers = data_loader.normalize_ticker_data(price_history)
-    split = 0.6
-    partial_normalized_history = normalized_history[:int(len(normalized_history) * split)]
+    partial_normalized_history = normalized_history[:-(num_future_days+offset)]
 
     # Get initial window from normalized data
     initial_window = get_initial_window(partial_normalized_history, window_size=window_size)
@@ -150,4 +153,4 @@ if __name__ == "__main__":
         print(f"  Volume: {preds[4]:,.0f}")
 
     # Plot predictions
-    compare_predictions(price_history, future_predictions, 30, split)
+    compare_predictions(price_history, future_predictions, num_future_days, offset)
