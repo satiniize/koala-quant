@@ -12,7 +12,7 @@ class Attention(nn.Module):
         self.key = nn.Linear(hidden_size, hidden_size)
         self.value = nn.Linear(hidden_size, hidden_size)
 
-        self.scale = torch.sqrt(torch.FloatTensor([hidden_size]))
+        self.register_buffer('scale', torch.sqrt(torch.FloatTensor([hidden_size])))
 
     def forward(self, x):
      # x shape: (batch, seq_len, hidden_size)
