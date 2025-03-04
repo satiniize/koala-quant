@@ -34,6 +34,19 @@ def normalize_ticker_data(data: pd.DataFrame):
 
 	return normalized_data, (price_scaler, volume_scaler) #TODO: Double check if this is still open high low close volume
 
+def normalized_per_cat(data: pd.DataFrame):
+    normalized = data.copy()
+    price_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+
+    scalers = {}
+
+    for col in price_cols:
+        scaler = StandardScaler()
+        normalized[col] = scaler.fit_transform(data[[col]])
+        scalers[col] = scaler
+
+    return normalized, scalers
+
 def create_sequence_data(history: pd.DataFrame, window_size=30):
 	time_series_data = []
 	targets = []
@@ -62,6 +75,6 @@ class FinanceDataset(Dataset):
 if __name__ == "__main__":
 	# price_history, fundamental_metrics = get_ticker_data()
 	price_history = get_ticker_data()
-	normalized_history, scalers = normalize_ticker_data(price_history)
+	normalized_history, scalers = normalized_per_cat(price_history)
 	time_series_data, targets = create_sequence_data(normalized_history)
 	pprint(targets[0])

@@ -1,4 +1,7 @@
-import tomllib
+try:
+    import tomllib
+except:
+    import tomli as tomllib
 
 import numpy as np
 import torch
