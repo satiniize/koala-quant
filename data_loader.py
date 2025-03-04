@@ -1,57 +1,36 @@
-# Core Data Libraries
 import numpy as np
 import yfinance as yf
 from torch.utils.data import Dataset, DataLoader
 import torch
-# Data Processing
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
-
-# Utilities
 from pprint import pprint
+import tenacity
 
+@tenacity.retry(wait=tenacity.wait_fixed(2), stop=tenacity.stop_after_attempt(5))
 def get_ticker_data(ticker_symbol: str = "^JKSE", period: str = "2y"):
 	stock_ticker = yf.Ticker(ticker_symbol)
 	price_history = stock_ticker.history(period=period)
 	price_history = price_history[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
 	price_history.reset_index(inplace=True)
-
-	# Calculate integrated features
-	# stock_info = stock_ticker.info
-	# fundamental_metrics = [
-	# 	'marketCap', 'beta', 'dividendYield', 'trailingPE',
-	# 	'forwardPE', 'bookValue', 'priceToBook', 'returnOnEquity',
-	# 	'debtToEquity', 'freeCashflow'
-	# ]
-
-	# Create tabular data vector
-	# fundamental_values = []
-	# for metric in fundamental_metrics:
-	# 	try:
-	# 		fundamental_values.append(float(stock_info.get(metric, 0)))
-	# 	except:
-	# 		fundamental_values.append(0.0)
-
-	# fundamental_data = np.array(fundamental_values)
-
-	# return price_history, fundamental_data # Return both history and tabular data
-	return price_history # Return both history and tabular data
+	return price_history
 
 def normalize_ticker_data(data: pd.DataFrame):
 	normalized_data = data.copy()
 	price_columns = ['Open', 'High', 'Low', 'Close']
 
 	# Normalize OHLC together across both time and feature dimensions
+	price_data = data[price_columns].values
 	price_scaler = StandardScaler()
-	flattened_prices = data[price_columns].values.ravel()
-	price_scaler.fit(flattened_prices.reshape(-1, 1))
+	price_scaler.fit(price_data.reshape(-1, 1))
 
-	for col in price_columns:
-		normalized_data[col] = price_scaler.transform(data[[col]])
+	for i, col in enumerate(price_columns):
+		normalized_data[col] = price_scaler.transform(price_data[:, i].reshape(-1, 1))
 
 	# Normalize volume separately
+	volume_data = data[['Volume']].values
 	volume_scaler = StandardScaler()
-	normalized_data['Volume'] = volume_scaler.fit_transform(data[['Volume']])
+	normalized_data['Volume'] = volume_scaler.fit_transform(volume_data)
 
 	return normalized_data, (price_scaler, volume_scaler) #TODO: Double check if this is still open high low close volume
 

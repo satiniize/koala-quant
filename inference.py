@@ -50,9 +50,9 @@ if __name__ == "__main__":
     price_history = data_loader.get_ticker_data(ticker_symbol)
     normalized_history, scalers = data_loader.normalize_ticker_data(price_history)
 
-    # Print some statistics about the original data
-    print("\nOriginal Data Statistics:")
-    print(price_history.describe())
+    # # Print some statistics about the original data
+    # print("\nOriginal Data Statistics:")
+    # print(price_history.describe())
 
     # Get initial window from normalized data
     initial_window = get_initial_window(normalized_history, window_size=window_size)
@@ -81,3 +81,6 @@ if __name__ == "__main__":
         print(f"  Low:    {preds[2]:,.2f}")
         print(f"  Close:  {preds[3]:,.2f}")
         print(f"  Volume: {preds[4]:,.0f}")
+
+    # Plot predictions
+    plot_predictions(price_history, future_predictions, 30)

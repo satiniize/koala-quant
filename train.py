@@ -1,14 +1,19 @@
+import tomllib
+
+import numpy as np
 import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader
+
 from lstm_model import MultiTargetFinanceModel
 import data_loader
-from torch.utils.data import Dataset, DataLoader
-import torch.optim as optim
-import torch.nn as nn
 
-def train_model(model, train_loader, num_epochs=200, device=torch.device("cpu")):
+# TODO: Add validation, add checkpoints
+def train_model(model, train_loader, num_epochs=200, device=torch.device("cpu"), learning_rate=0.001, lr_scheduler_step=20, lr_scheduler_gamma=0.9):
 	criterion = nn.MSELoss()
-	optimizer = optim.Adam(model.parameters(), lr=0.001)
-	scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.9)
+	optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+	scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=lr_scheduler_step, gamma=lr_scheduler_gamma)
 
 	model.train()
 	for epoch in range(num_epochs):
@@ -29,25 +34,60 @@ def train_model(model, train_loader, num_epochs=200, device=torch.device("cpu"))
 	print(f"Model saved to {save_path}")
 
 if __name__ == "__main__":
-	# For demonstration, training on dummy data:
+	with open('model_hyperparam.toml', 'rb') as f:
+		config = tomllib.load(f)
+
+	# Model
+	input_size_time_series = config['model']['input_size_time_series']      # [Open, High, Low, Close, Volume]
+	hidden_size_time_series = config['model']['hidden_size_time_series']
+	num_layers_time_series = config['model']['num_layers_time_series']
+
+	# Training
+	num_epochs = config['training']['num_epochs']
+	batch_size = config['training']['batch_size']
+	learning_rate = config['training']['learning_rate']
+	lr_scheduler_step = config['training']['lr_scheduler_step']
+	lr_scheduler_gamma = config['training']['lr_scheduler_gamma']
+
+	# Data
+	training_tickers = config['data']['training_tickers']
+
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-	num_features_ts = 5      # [Open, High, Low, Close, Volume]
+	# Create large finance dataset
+	all_time_series_data = []
+	all_targets = []
 
-	price_history = data_loader.get_ticker_data()
-	normalized_history, scalers = data_loader.normalize_ticker_data(price_history)
-	time_series_data, targets = data_loader.create_sequence_data(normalized_history)
+	for ticker_info in training_tickers:
+		price_history = data_loader.get_ticker_data(ticker_info["ticker"], period=ticker_info["period"])
+		normalized_history, scalers = data_loader.normalize_ticker_data(price_history)
+		time_series_data, targets = data_loader.create_sequence_data(normalized_history)
+		all_time_series_data.append(time_series_data)
+		all_targets.append(targets)
 
-	dataset = data_loader.FinanceDataset(time_series_data, targets)
-	train_loader = DataLoader(dataset, batch_size=32, shuffle=True)
+	combined_time_series = np.concatenate(all_time_series_data, axis=0)
+	combined_targets = np.concatenate(all_targets, axis=0)
 
-	hidden_size_time_series = 64
-	num_layers_time_series = 4
+	dataset = data_loader.FinanceDataset(combined_time_series, combined_targets)
+	train_loader = DataLoader(
+		dataset,
+		batch_size=batch_size,
+		shuffle=True,
+	)
 
+	# Define and train model
 	model = MultiTargetFinanceModel(
-		num_features_ts,
+		input_size_time_series,
 		hidden_size_time_series,
 		num_layers_time_series,
 	)
 	model.to(device)
-	train_model(model, train_loader, num_epochs=200, device=device)
+	train_model(
+		model,
+		train_loader,
+		num_epochs=num_epochs,
+		device=device,
+		learning_rate=learning_rate,
+		lr_scheduler_step=lr_scheduler_step,
+		lr_scheduler_gamma=lr_scheduler_gamma,
+	)
