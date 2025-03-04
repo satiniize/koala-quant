@@ -1,4 +1,8 @@
-# inference.py
+try:
+    import tomllib
+except:
+    import tomli as tomllib
+
 import torch
 import numpy as np
 from lstm_model import MultiTargetFinanceModel
@@ -59,12 +63,16 @@ if __name__ == "__main__":
 
     # Setup model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    num_features_ts = 5
-    hidden_size_ts = 64
-    num_layers_ts = 4
+
+    with open('model_hyperparam.toml', 'rb') as f:
+        config = tomllib.load(f)
+
+    input_size_time_series = config['model']['input_size_time_series']      # [Open, High, Low, Close, Volume]
+    hidden_size_time_series = config['model']['hidden_size_time_series']
+    num_layers_time_series = config['model']['num_layers_time_series']
 
     # Load the model
-    model = MultiTargetFinanceModel(num_features_ts, hidden_size_ts, num_layers_ts)
+    model = MultiTargetFinanceModel(input_size_time_series, hidden_size_time_series, num_layers_time_series)
     model.to(device)
     model.load_state_dict(torch.load("multi_target_finance_model.pth", map_location=device))
     print("\nModel loaded successfully.")

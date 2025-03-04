@@ -1,13 +1,13 @@
 [model]
 # Architecture
 input_size_time_series = 5
-hidden_size_time_series = 64
-num_layers_time_series = 4
+hidden_size_time_series = 128
+num_layers_time_series = 8
 dropout = 0.2
 
 [training]
 batch_size = 32
-num_epochs = 200
+num_epochs = 500
 learning_rate = 0.001
 lr_scheduler_step = 20
 lr_scheduler_gamma = 0.9
