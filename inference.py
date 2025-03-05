@@ -15,7 +15,7 @@ def get_initial_window(normalized_history, window_size=30):
     window = normalized_history.iloc[-window_size:][features].values.astype(float)
     return window
 
-def predict_future_values(model, initial_window, scalers, num_days=5):
+def predict_future_values(model, initial_window, scalers, num_days=5, quantiles=[0.1, 0.5, 0.9]):
     price_scaler, volume_scaler = scalers
     predictions = []
     current_window = initial_window.copy()
@@ -26,39 +26,50 @@ def predict_future_values(model, initial_window, scalers, num_days=5):
 
         model.eval()
         with torch.no_grad():
-            preds_norm = model(input_time_series, None)  # Shape: (1, 5)
-            preds_norm = preds_norm.cpu().numpy()[0]
+            preds_norm = model(input_time_series, None)  # Shape: (1, 5, n_quantiles)
+
+        # Extract quantiles
+        lower_q = preds_norm[0, :, 0].cpu().numpy()  # Lower quantile (e.g., 10%)
+        median_q = preds_norm[0, :, 1].cpu().numpy()  # Median (50%)
+        upper_q = preds_norm[0, :, 2].cpu().numpy()  # Upper quantile (e.g., 90%)
 
         # Inverse transform predictions
-        preds_original = np.zeros_like(preds_norm)
+        preds_original_lower = np.zeros_like(lower_q)
+        preds_original_median = np.zeros_like(median_q)
+        preds_original_upper = np.zeros_like(upper_q)
 
         # Inverse transform OHLC (first 4 values)
-        ohlc_values = preds_norm[:4].reshape(-1, 1)
-        preds_original[:4] = price_scaler.inverse_transform(ohlc_values).flatten()
+        preds_original_lower[:4] = price_scaler.inverse_transform(lower_q[:4].reshape(-1, 1)).flatten()
+        preds_original_median[:4] = price_scaler.inverse_transform(median_q[:4].reshape(-1, 1)).flatten()
+        preds_original_upper[:4] = price_scaler.inverse_transform(upper_q[:4].reshape(-1, 1)).flatten()
 
         # Inverse transform Volume (last value)
-        volume_value = np.array([[preds_norm[4]]])  # Reshape to 2D array
-        preds_original[4] = volume_scaler.inverse_transform(volume_value).item()
+        preds_original_lower[4] = volume_scaler.inverse_transform(lower_q[4].reshape(-1, 1)).flatten()[0]
+        preds_original_median[4] = volume_scaler.inverse_transform(median_q[4].reshape(-1, 1)).flatten()[0]
+        preds_original_upper[4] = volume_scaler.inverse_transform(upper_q[4].reshape(-1, 1)).flatten()[0]
 
-        predictions.append(preds_original)
+        predictions.append((preds_original_lower, preds_original_median, preds_original_upper))
 
-        # Update window with normalized predictions for next iteration
-        current_window = np.vstack([current_window[1:], preds_norm])
+        # Update window with normalized median predictions for next iteration
+        current_window = np.vstack([current_window[1:], median_q])
 
     return predictions
 
+
 # Compare predictions with actual data
 def compare_predictions(price_history, future_predictions, window_size, offset=0):
-    # Extract historical Close prices
-    predicted_close = [pred[3] for pred in future_predictions]
+    # Extract quartiles from predictions
+    predicted_q25 = [pred[0][3] for pred in future_predictions]  # 25th percentile (Lower)
+    predicted_q50 = [pred[1][3] for pred in future_predictions]  # Median
+    predicted_q75 = [pred[2][3] for pred in future_predictions]  # 75th percentile (Upper)
 
-    # n = int(len(price_history) * split) # Data cutoff
-    n_predictions = len(predicted_close)
-    n = len(price_history) - (window_size + n_predictions) - offset # Data cutoff
+    # Find correct index range
+    n_predictions = len(predicted_q50)
+    n = len(price_history) - (window_size + n_predictions) - offset  # Data cutoff
 
-    # historical_opens = price_history['Close'].values[n-window_size:n+n_predictions]
     historical_close = price_history['Close'].values
-    historical_close = historical_close[n:len(historical_close)-offset]
+    historical_close = historical_close[n:len(historical_close)-offset]  # Adjust for offset
+
     # Create x-axis values
     historical_x = range(window_size + n_predictions)
     prediction_x = range(window_size, window_size + n_predictions)
@@ -72,16 +83,16 @@ def compare_predictions(price_history, future_predictions, window_size, offset=0
              color='blue',
              linewidth=2)
 
-    # Plot predictions
-    plt.plot(prediction_x, predicted_close,
-             label='Predicted Close Prices',
+    # Plot median predictions
+    plt.plot(prediction_x, predicted_q50,
+             label='Predicted Median Close Prices',
              color='red',
              linestyle='--',
              linewidth=2)
 
-    # Add markers at data points
-    plt.scatter(historical_x, historical_close, color='blue', s=50)
-    plt.scatter(prediction_x, predicted_close, color='red', s=50)
+    # Plot quartile range as shaded area
+    plt.fill_between(prediction_x, predicted_q25, predicted_q75,
+                     color='red', alpha=0.2, label="Interquartile Range (25%-75%)")
 
     # Add labels and title
     plt.title(f'Historical and Predicted Close Prices for {ticker_symbol}',
@@ -103,12 +114,13 @@ def compare_predictions(price_history, future_predictions, window_size, offset=0
     # Show the plot
     plt.show()
 
+
 if __name__ == "__main__":
     with open('model_hyperparam.toml', 'rb') as f:
         config = tomllib.load(f)
 
-    offset = 64
-    ticker_symbol = "BMRI.JK"
+    offset = 200
+    ticker_symbol = "ASII.JK"
     window_size = config["data"]["sequence_length"]
     num_future_days = config["prediction"]["future_days"]
 
@@ -123,7 +135,10 @@ if __name__ == "__main__":
     # Setup model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    input_size_time_series = config['model']['input_size_time_series']      # [Open, High, Low, Close, Volume]
+    # Define quantiles
+    quantiles = [0.1, 0.5, 0.9]  # 10%, 50% (median), 90%
+
+    input_size_time_series = config['model']['input_size_time_series']
     hidden_size_time_series = config['model']['hidden_size_time_series']
     num_layers_time_series = config['model']['num_layers_time_series']
     dropout = config['model']['dropout']
@@ -133,24 +148,30 @@ if __name__ == "__main__":
         input_size_time_series,
         hidden_size_time_series,
         num_layers_time_series,
-        dropout
+        dropout,
+        n_quantiles=len(quantiles)  # Add number of quantiles
     )
     model.to(device)
     model.load_state_dict(torch.load("multi_target_finance_model.pth", map_location=device))
     print("\nModel loaded successfully.")
 
-    # Make predictions
-    future_predictions = predict_future_values(model, initial_window, scalers, num_days=num_future_days)
+    # Make predictions with quantiles
+    future_predictions = predict_future_values(
+        model,
+        initial_window,
+        scalers,
+        num_days=num_future_days,
+        quantiles=quantiles
+    )
 
     # Print predictions
     print("\nPredictions:")
     for i, preds in enumerate(future_predictions, start=1):
-        print(f"\nDay {i}:")
-        print(f"  Open:   {preds[0]:,.2f}")
-        print(f"  High:   {preds[1]:,.2f}")
-        print(f"  Low:    {preds[2]:,.2f}")
-        print(f"  Close:  {preds[3]:,.2f}")
-        print(f"  Volume: {preds[4]:,.0f}")
+        print(f"  Open (10%-50%-90%):   {float(preds[0][0]):,.2f} - {float(preds[1][0]):,.2f} - {float(preds[2][0]):,.2f}")
+        print(f"  High (10%-50%-90%):   {float(preds[0][1]):,.2f} - {float(preds[1][1]):,.2f} - {float(preds[2][1]):,.2f}")
+        print(f"  Low (10%-50%-90%):    {float(preds[0][2]):,.2f} - {float(preds[1][2]):,.2f} - {float(preds[2][2]):,.2f}")
+        print(f"  Close (10%-50%-90%):  {float(preds[0][3]):,.2f} - {float(preds[1][3]):,.2f} - {float(preds[2][3]):,.2f}")
+        print(f"  Volume (10%-50%-90%): {int(preds[0][4])} - {int(preds[1][4])} - {int(preds[2][4])}")
 
     # Plot predictions
     compare_predictions(price_history, future_predictions, num_future_days, offset)

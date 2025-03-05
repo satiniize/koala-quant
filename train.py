@@ -13,28 +13,69 @@ from lstm_model import MultiTargetFinanceModel
 import data_loader
 
 # TODO: Add validation, add checkpoints
-def train_model(model, train_loader, num_epochs=200, device=torch.device("cpu"), learning_rate=0.001, lr_scheduler_step=20, lr_scheduler_gamma=0.9):
-	criterion = nn.MSELoss()
-	optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-	scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=lr_scheduler_step, gamma=lr_scheduler_gamma)
 
-	model.train()
-	for epoch in range(num_epochs):
-		epoch_loss = 0.0
-		for x_ts, y in train_loader:
-			x_ts, y = x_ts.to(device), y.to(device)
-			optimizer.zero_grad()
-			outputs = model(x_ts, None)
-			loss = criterion(outputs, y)
-			loss.backward()
-			optimizer.step()
-			epoch_loss += loss.item()
-		scheduler.step()
-		print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss/len(train_loader):.6f}")
+def quantile_loss(predictions, targets, quantiles=[0.1, 0.5, 0.9]):
+    """
+    Compute quantile loss for multiple quantile levels.
 
-	save_path = "multi_target_finance_model.pth"
-	torch.save(model.state_dict(), save_path)
-	print(f"Model saved to {save_path}")
+    Args:
+        predictions: Tensor of shape (batch_size, n_features, n_quantiles)
+        targets: Tensor of shape (batch_size, n_features)
+        quantiles: List of quantile levels to predict
+
+    Returns:
+        Mean quantile loss across all samples, features, and quantiles
+    """
+    losses = []
+
+    # Ensure targets has correct shape for broadcasting
+    targets = targets.unsqueeze(-1)  # (batch, features, 1)
+
+    for i, q in enumerate(quantiles):
+        # Extract predictions for the current quantile
+        pred_q = predictions[:, :, i]  # (batch, features)
+        pred_q = pred_q.unsqueeze(-1)  # (batch, features, 1)
+
+        # Calculate errors
+        errors = targets - pred_q
+
+        # Apply quantile loss formula
+        loss_q = torch.max((q - 1) * errors, q * errors)
+        losses.append(loss_q.mean())
+
+    return sum(losses) / len(losses)
+
+def train_model(model, train_loader, num_epochs=200, device=torch.device("cpu"),
+                learning_rate=0.001, lr_scheduler_step=20, lr_scheduler_gamma=0.9,
+                quantiles=[0.1, 0.5, 0.9]):
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=lr_scheduler_step, gamma=lr_scheduler_gamma)
+
+    model.train()
+    for epoch in range(num_epochs):
+        epoch_loss = 0.0
+        for x_ts, y in train_loader:
+            x_ts, y = x_ts.to(device), y.to(device)
+
+            optimizer.zero_grad()
+            outputs = model(x_ts, None)
+
+            loss = quantile_loss(outputs, y, quantiles)
+
+            loss.backward()
+            # Add gradient clipping for stability
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+            epoch_loss += loss.item()
+
+        scheduler.step()
+        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss/len(train_loader):.6f}")
+
+    save_path = "multi_target_finance_model.pth"
+    torch.save(model.state_dict(), save_path)
+    print(f"Model saved to {save_path}")
+
+
 
 if __name__ == "__main__":
 	with open('model_hyperparam.toml', 'rb') as f:
@@ -81,19 +122,19 @@ if __name__ == "__main__":
 	)
 
 	# Define and train model
-	model = MultiTargetFinanceModel(
-		input_size_time_series,
-		hidden_size_time_series,
-		num_layers_time_series,
-		dropout
-	)
+	quantiles = [0.1, 0.5, 0.9]
+
+	model = MultiTargetFinanceModel(input_size_time_series, hidden_size_time_series, num_layers_time_series, dropout, n_quantiles=len(quantiles))
+
+
 	model.to(device)
 	train_model(
-		model,
-		train_loader,
-		num_epochs=num_epochs,
-		device=device,
-		learning_rate=learning_rate,
-		lr_scheduler_step=lr_scheduler_step,
-		lr_scheduler_gamma=lr_scheduler_gamma,
-	)
+        model,
+        train_loader,
+        num_epochs=num_epochs,
+        device=device,
+        learning_rate=learning_rate,
+        lr_scheduler_step=lr_scheduler_step,
+        lr_scheduler_gamma=lr_scheduler_gamma,
+        quantiles=quantiles  # Pass quantiles
+    )
