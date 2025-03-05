@@ -60,6 +60,8 @@ def train_model(model, train_loader, num_epochs=200, device=torch.device("cpu"),
             optimizer.zero_grad()
             outputs = model(x_ts, None)
 
+            # print(outputs.shape)
+
             loss = quantile_loss(outputs, y, quantiles)
 
             loss.backward()
