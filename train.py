@@ -1,7 +1,7 @@
 try:
-    import tomllib
+	import tomllib
 except:
-    import tomli as tomllib
+	import tomli as tomllib
 
 import numpy as np
 import torch
@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from lstm_model import MultiTargetFinanceModel
+from transformer_model2 import create_transformer
 import data_loader
 
 # TODO: Add validation, add checkpoints
@@ -24,7 +24,7 @@ def train_model(model, train_loader, num_epochs=200, device=torch.device("cpu"),
 		for x_ts, y in train_loader:
 			x_ts, y = x_ts.to(device), y.to(device)
 			optimizer.zero_grad()
-			outputs = model(x_ts, None)
+			outputs = model(x_ts)
 			loss = criterion(outputs, y)
 			loss.backward()
 			optimizer.step()
@@ -32,7 +32,7 @@ def train_model(model, train_loader, num_epochs=200, device=torch.device("cpu"),
 		scheduler.step()
 		print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss/len(train_loader):.6f}")
 
-	save_path = "multi_target_finance_model.pth"
+	save_path = "transformer_finance_model.pth"
 	torch.save(model.state_dict(), save_path)
 	print(f"Model saved to {save_path}")
 
@@ -40,10 +40,13 @@ if __name__ == "__main__":
 	with open('model_hyperparam.toml', 'rb') as f:
 		config = tomllib.load(f)
 
-	# Model
-	input_size_time_series = config['model']['input_size_time_series']      # [Open, High, Low, Close, Volume]
-	hidden_size_time_series = config['model']['hidden_size_time_series']
-	num_layers_time_series = config['model']['num_layers_time_series']
+	# Model parameters for transformer
+	vocab_size = config['model']['vocab_size']
+	d_model = config['model']['d_model']
+	num_heads = config['model']['num_heads']
+	num_layers = config['model']['num_layers']
+	d_ff = config['model']['d_ff']
+	max_seq_length = config['model']['max_seq_length']
 	dropout = config['model']['dropout']
 
 	# Training
@@ -81,19 +84,14 @@ if __name__ == "__main__":
 	)
 
 	# Define and train model
-	model = MultiTargetFinanceModel(
-		input_size_time_series,
-		hidden_size_time_series,
-		num_layers_time_series,
-		dropout
-	)
+	model = create_transformer()
 	model.to(device)
 	train_model(
-		model,
-		train_loader,
-		num_epochs=num_epochs,
-		device=device,
-		learning_rate=learning_rate,
-		lr_scheduler_step=lr_scheduler_step,
-		lr_scheduler_gamma=lr_scheduler_gamma,
+					model,
+					train_loader,
+					num_epochs=num_epochs,
+					device=device,
+					learning_rate=learning_rate,
+					lr_scheduler_step=lr_scheduler_step,
+					lr_scheduler_gamma=lr_scheduler_gamma,
 	)

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-class MultiHeadAttention(nn.Module):
+class MultiHeadAttention(nn.Module): # LGTM
     def __init__(self, d_model, num_heads):
         super().__init__()
         assert d_model % num_heads == 0
@@ -51,7 +51,7 @@ class PositionwiseFeedForward(nn.Module):
     def forward(self, x):
         return self.fc2(self.relu(self.fc1(x)))
 
-class PositionalEncoding(nn.Module):
+class PositionalEncoding(nn.Module): # LGTM
     def __init__(self, d_model, max_seq_length=5000):
         super().__init__()
 
@@ -87,7 +87,7 @@ class EncoderLayer(nn.Module):
         x = self.norm2(x + self.dropout(ff_output))
         return x
 
-class Transformer(nn.Module):
+class Transformer(nn.Module): # LGTM
     def __init__(self, vocab_size, d_model, num_heads, num_layers, d_ff, max_seq_length, dropout=0.1):
         super().__init__()
 
