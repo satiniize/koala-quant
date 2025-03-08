@@ -5,152 +5,127 @@ except:
 
 import torch
 import numpy as np
-from lstm_model import MultiTargetFinanceModel
+from transformer_model2 import create_transformer
 import data_loader
 import matplotlib.pyplot as plt
-import pandas as pd
+from matplotlib.ticker import FuncFormatter
 
-def get_initial_window(normalized_history, window_size=30):
-    features = ['Open', 'High', 'Low', 'Close', 'Volume']
-    window = normalized_history.iloc[-window_size:][features].values.astype(float)
-    return window
+def predict_next_token(model, input_sequence, device):
+    model.eval()
+    with torch.no_grad():
+        # Forward pass through the model
+        output = model(input_sequence.to(device))
+        # Get the last prediction
+        last_prediction = output[:, -1, :]  # [batch_size, vocab_size]
+        # Get the most likely token
+        predicted_token = torch.argmax(last_prediction, dim=-1)
+        return predicted_token.item()
 
-def predict_future_values(model, initial_window, scalers, num_days=5):
-    price_scaler, volume_scaler = scalers
+def predict_future_values(model, initial_tokens, vocab_size, num_predictions=5, device=torch.device("cpu")):
+    current_sequence = initial_tokens.clone()
     predictions = []
-    current_window = initial_window.copy()
-    device = next(model.parameters()).device
 
-    for i in range(num_days):
-        input_time_series = torch.tensor(current_window, dtype=torch.float32).unsqueeze(0).to(device)
+    for _ in range(num_predictions):
+        # Prepare input sequence
+        input_sequence = current_sequence.unsqueeze(0)  # Add batch dimension
 
-        model.eval()
-        with torch.no_grad():
-            preds_norm = model(input_time_series, None)  # Shape: (1, 5)
-            preds_norm = preds_norm.cpu().numpy()[0]
+        # Get prediction
+        predicted_token = predict_next_token(model, input_sequence, device)
+        predictions.append(predicted_token)
 
-        # Inverse transform predictions
-        preds_original = np.zeros_like(preds_norm)
-
-        # Inverse transform OHLC (first 4 values)
-        ohlc_values = preds_norm[:4].reshape(-1, 1)
-        preds_original[:4] = price_scaler.inverse_transform(ohlc_values).flatten()
-
-        # Inverse transform Volume (last value)
-        volume_value = np.array([[preds_norm[4]]])  # Reshape to 2D array
-        preds_original[4] = volume_scaler.inverse_transform(volume_value).item()
-
-        predictions.append(preds_original)
-
-        # Update window with normalized predictions for next iteration
-        current_window = np.vstack([current_window[1:], preds_norm])
+        # Update sequence for next prediction
+        current_sequence = torch.cat([current_sequence[1:], torch.tensor([predicted_token])])
 
     return predictions
 
-# Compare predictions with actual data
-def compare_predictions(price_history, future_predictions, window_size, offset=0):
-    # Extract historical Close prices
-    predicted_close = [pred[3] for pred in future_predictions]
+def detokenize_predictions(predictions, vocab_size):
+    bins = np.linspace(-10.0, 10.0, vocab_size)
+    bin_centers = (bins[:-1] + bins[1:]) / 2
+    normalized_values = [bin_centers[token-1] for token in predictions]
+    return normalized_values
 
-    # n = int(len(price_history) * split) # Data cutoff
-    n_predictions = len(predicted_close)
-    n = len(price_history) - (window_size + n_predictions) - offset # Data cutoff
+def compare_predictions(price_data, future_predictions, sequence_length, scaler, offset=0):
+    predicted_prices = scaler.inverse_transform(np.array(future_predictions))
 
-    # historical_opens = price_history['Close'].values[n-window_size:n+n_predictions]
-    historical_close = price_history['Close'].values
-    historical_close = historical_close[n:len(historical_close)-offset]
-    # Create x-axis values
-    historical_x = range(window_size + n_predictions)
-    prediction_x = range(window_size, window_size + n_predictions)
+    n_predictions = len(predicted_prices)
+    n = len(price_data) - (sequence_length + n_predictions) - offset
 
-    # Create the plot
+    historical_prices = price_data[n:len(price_data)-offset]
+
+    historical_x = range(sequence_length + n_predictions)
+    prediction_x = range(sequence_length, sequence_length + n_predictions)
+
     plt.figure(figsize=(15, 8))
+    plt.plot(historical_x, historical_prices, label='Historical Prices', color='blue', linewidth=2)
+    plt.plot(prediction_x, predicted_prices, label='Predicted Prices', color='red', linestyle='--', linewidth=2)
+    plt.scatter(historical_x, historical_prices, color='blue', s=50)
+    plt.scatter(prediction_x, predicted_prices, color='red', s=50)
 
-    # Plot historical data
-    plt.plot(historical_x, historical_close,
-             label='Historical Close Prices',
-             color='blue',
-             linewidth=2)
-
-    # Plot predictions
-    plt.plot(prediction_x, predicted_close,
-             label='Predicted Close Prices',
-             color='red',
-             linestyle='--',
-             linewidth=2)
-
-    # Add markers at data points
-    plt.scatter(historical_x, historical_close, color='blue', s=50)
-    plt.scatter(prediction_x, predicted_close, color='red', s=50)
-
-    # Add labels and title
-    plt.title(f'Historical and Predicted Close Prices for {ticker_symbol}',
-              fontsize=14,
-              pad=20)
+    plt.title(f'Historical and Predicted Prices', fontsize=14, pad=20)
     plt.xlabel('Days', fontsize=12)
     plt.ylabel('Price', fontsize=12)
     plt.legend(fontsize=10)
-
-    # Add grid
     plt.grid(True, linestyle='--', alpha=0.7)
-
-    # Format y-axis with comma separator
-    plt.gca().yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format(int(x), ',')))
-
-    # Adjust layout
+    plt.gca().yaxis.set_major_formatter(FuncFormatter(lambda x, p: format(int(x), ',')))
     plt.tight_layout()
-
-    # Show the plot
     plt.show()
 
 if __name__ == "__main__":
     with open('model_hyperparam.toml', 'rb') as f:
         config = tomllib.load(f)
 
-    offset = 64
-    ticker_symbol = "BMRI.JK"
-    window_size = config["data"]["sequence_length"]
-    num_future_days = config["prediction"]["future_days"]
+    # Load configuration
+    vocab_size = config['model']['vocab_size']
+    d_model = config['model']['d_model']
+    num_heads = config['model']['num_heads']
+    num_layers = config['model']['num_layers']
+    d_ff = config['model']['d_ff']
+    max_seq_length = config['model']['max_seq_length']
+    dropout = config['model']['dropout']
+    sequence_length = config['data']['sequence_length']
 
-    # Get data and normalize it
-    price_history = data_loader.get_ticker_data(ticker_symbol)
-    normalized_history, scalers = data_loader.normalize_ticker_data(price_history)
-    partial_normalized_history = normalized_history[:-(num_future_days+offset)]
-
-    # Get initial window from normalized data
-    initial_window = get_initial_window(partial_normalized_history, window_size=window_size)
-
-    # Setup model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    input_size_time_series = config['model']['input_size_time_series']      # [Open, High, Low, Close, Volume]
-    hidden_size_time_series = config['model']['hidden_size_time_series']
-    num_layers_time_series = config['model']['num_layers_time_series']
-    dropout = config['model']['dropout']
-
-    # Load the model
-    model = MultiTargetFinanceModel(
-        input_size_time_series,
-        hidden_size_time_series,
-        num_layers_time_series,
-        dropout
+    # Create and load model
+    model = create_transformer(
+        vocab_size=vocab_size,
+        d_model=d_model,
+        num_heads=num_heads,
+        num_layers=num_layers,
+        d_ff=d_ff,
+        max_seq_length=max_seq_length,
+        dropout=dropout
     )
     model.to(device)
     model.load_state_dict(torch.load("multi_target_finance_model.pth", map_location=device))
     print("\nModel loaded successfully.")
 
+    # Get and prepare data
+    ticker_symbol = "BMRI.JK"
+    price_history = data_loader.get_ticker_data(ticker_symbol)
+    normalized_history, price_scaler = data_loader.normalize_ticker_data(price_history)
+    tokenized_history = data_loader.tokenize_ticker_data(normalized_history, vocab_size)
+
+    # Get initial sequence for prediction
+    initial_sequence = torch.tensor(tokenized_history[-sequence_length:], dtype=torch.long)
+
     # Make predictions
-    future_predictions = predict_future_values(model, initial_window, scalers, num_days=num_future_days)
+    num_predictions = config['prediction']['future_days']
+    predictions = predict_future_values(
+        model,
+        initial_sequence,
+        vocab_size,
+        num_predictions=num_predictions,
+        device=device
+    )
+
+    # Convert predictions back to normalized values
+    normalized_predictions = detokenize_predictions(predictions, vocab_size)
 
     # Print predictions
-    print("\nPredictions:")
-    for i, preds in enumerate(future_predictions, start=1):
-        print(f"\nDay {i}:")
-        print(f"  Open:   {preds[0]:,.2f}")
-        print(f"  High:   {preds[1]:,.2f}")
-        print(f"  Low:    {preds[2]:,.2f}")
-        print(f"  Close:  {preds[3]:,.2f}")
-        print(f"  Volume: {preds[4]:,.0f}")
+    print("\nPredicted values (normalized):")
+    for i, pred in enumerate(normalized_predictions, 1):
+        print(f"Day {i}: {pred:.4f}")
 
     # Plot predictions
-    compare_predictions(price_history, future_predictions, num_future_days, offset)
+    compare_predictions(price_history, normalized_predictions, sequence_length, price_scaler)

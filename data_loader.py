@@ -1,32 +1,40 @@
+try:
+	import tomllib
+except:
+	import tomli as tomllib
 import numpy as np
-import yfinance as yf
-from torch.utils.data import Dataset, DataLoader
-import torch
-from sklearn.preprocessing import StandardScaler
 import pandas as pd
-from pprint import pprint
 import tenacity
-
+import torch
+import math
+import yfinance as yf
+import matplotlib.pyplot as plt
+from pprint import pprint
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.preprocessing import StandardScaler
+from torch.utils.data import Dataset, DataLoader
 # 1. ln(x)
 # 2. minus by gradient/trend ie y=bx
 # 3. divide by mean(alternatively median?)
+# 4. subtract by 1
 
 class FinanceScaler(BaseEstimator, TransformerMixin):
     def __init__(self):
-        self.scale_price	= 0.0
-        self.slope_price	= 0.0
-        self.epsilon		= 1e-10
+        self.mean = 0.0
+        self.slope = 0.0
+        self.stddev = 0.0
+        # self.epsilon = 1e-10
 
     def fit(self, X, y=None):
         """Compute the scaling parameters"""
         x = np.arange(len(X))
         log_values = np.log(X)
-        self.slope_price = np.polyfit(x, log_values, 1)[0]
+        self.slope = np.polyfit(x, log_values, 1)[0]
 
-        trend = self.slope_price * x
+        trend = self.slope * x
         detrended = log_values - trend
-        self.scale_price = np.mean(np.abs(detrended))
-
+        self.mean = np.mean(np.abs(detrended))
+        self.stddev = np.std(detrended)
         return self
 
     def transform(self, X):
@@ -36,11 +44,10 @@ class FinanceScaler(BaseEstimator, TransformerMixin):
         x = np.arange(len(X))
         log_values = np.log(X)
 
-        trend = self.slope_price * x
+        trend = self.slope * x
         detrended = log_values - trend
-
-        normalized = detrended / self.scale_price
-
+        zero_mean = detrended - self.mean
+        normalized = zero_mean / self.stddev
         result = normalized
 
         return result
@@ -51,9 +58,9 @@ class FinanceScaler(BaseEstimator, TransformerMixin):
 
         x = np.arange(len(X))
 
-        unscaled = X * self.scale_price
+        unscaled = (X * self.stddev) + self.mean
 
-        trend = self.slope_price * x
+        trend = self.slope * x
         with_trend = unscaled + trend
 
         original = np.exp(with_trend)
@@ -68,15 +75,27 @@ def get_ticker_data(ticker_symbol: str = "^JKSE", period: str = "2y", labels: st
 	price_history = stock_ticker.history(period=period)
 	price_history = price_history[labels].dropna()
 	price_history.reset_index(inplace=True)
-	return price_history
+	return price_history['Close'].to_numpy()
 
-def normalize_ticker_data(data: pd.DataFrame):
+def normalize_ticker_data(data: np.ndarray):
 	normalized_data = data.copy()
-	price_data = data['Open'].values.reshape(-1, 1)
+	price_data = data
 	price_scaler = FinanceScaler()
 	price_scaler.fit(price_data)
-	normalized_data['Open'] = price_scaler.transform(price_data)
+	normalized_data = price_scaler.transform(price_data)
 	return normalized_data, price_scaler
+
+def tokenize_ticker_data(data: np.ndarray, n_bins):
+	tokenized_data = data.copy()
+	bins = np.linspace(-10.0, 10.0, n_bins)
+	tokenized_data = np.digitize(data, bins)
+	return tokenized_data
+
+def detokenize_ticker_data(tokenized_data: np.ndarray, n_bins):
+	detokenized_data = tokenized_data.copy()
+	bin_size = 10/n_bins
+	detokenized_data['Close'] = tokenized_data['Close'] * bin_size
+	return detokenized_data
 
 def normalized_per_cat(data: pd.DataFrame):
     normalized = data.copy()
@@ -91,34 +110,46 @@ def normalized_per_cat(data: pd.DataFrame):
 
     return normalized, scalers
 
-def create_sequence_data(history: pd.DataFrame, window_size=30):
-	time_series_data = []
-	targets = []
-	for i in range(len(history) - window_size - 1):
-		window_array = history.iloc[i:i+window_size][['Open']].values.astype(float)
-		time_series_data.append(window_array)
-		target = history.iloc[i+window_size][['Open']].values.astype(float)
-		targets.append(target)
+# def create_sequence_data(history: np.ndarray, window_size=30):
+# 	time_series_data = []
+# 	targets = []
+# 	for i in range(len(history) - window_size - 1):
+# 		# Include all features you want to use
+# 		window_array = history.iloc[i:i+window_size].values.astype(float)
+# 		time_series_data.append(window_array)
+# 		target = history.iloc[i+window_size]['Close']
+# 		targets.append(target)
 
-	time_series_data = np.array(time_series_data)
-	targets = np.array(targets)  # Now targets have shape: (num_samples, 1)
-
-	return time_series_data, targets
+# 	return np.array(time_series_data), np.array(targets)
 
 class FinanceDataset(Dataset):
-	def __init__(self, ts_data, targets):
-		self.ts_data = torch.from_numpy(ts_data).float()
-		self.targets = torch.from_numpy(targets).float()
+    def __init__(self, data, sequence_length):
+        self.sequence_length = sequence_length
+        self.data = torch.from_numpy(data).long()  # Convert to Long tensor for embedding
 
-	def __len__(self):
-		return len(self.targets)
+    def __len__(self):
+        return len(self.data) - self.sequence_length - 1
 
-	def __getitem__(self, idx):
-		return self.ts_data[idx], self.targets[idx]
+    def __getitem__(self, idx):
+        x = self.data[idx:idx + self.sequence_length]
+        y = self.data[idx + self.sequence_length]
+        return x, y
 
 if __name__ == "__main__":
-	# price_history, fundamental_metrics = get_ticker_data()
+	with open('model_hyperparam.toml', 'rb') as f:
+		config = tomllib.load(f)
+	bins = config['model']['vocabulary_size']
 	price_history = get_ticker_data()
-	normalized_history, scalers = normalized_per_cat(price_history)
-	time_series_data, targets = create_sequence_data(normalized_history)
-	pprint(targets[0])
+	normalized_history, scalers = normalize_ticker_data(price_history)
+	tokenized_time_series_data = tokenize_ticker_data(normalized_history, bins)
+
+	print(tokenized_time_series_data)
+
+	plt.figure(figsize=(10, 6))
+	plt.plot(range(len(tokenized_time_series_data)), tokenized_time_series_data, label='Tokenized Data')
+	plt.xlabel('Index')
+	plt.ylabel('Token Value')
+	plt.title('Tokenized Time Series Data')
+	plt.legend()
+	plt.grid(True)
+	plt.show()

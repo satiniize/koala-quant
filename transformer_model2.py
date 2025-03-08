@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import math
 
 class MultiHeadAttention(nn.Module): # LGTM
     def __init__(self, d_model, num_heads):
@@ -113,23 +114,16 @@ class Transformer(nn.Module): # LGTM
         return self.fc(x)
 
 # Example usage:
-def create_transformer():
-    vocab_size = 1000
-    d_model = 512
-    num_heads = 8
-    num_layers = 6
-    d_ff = 2048
-    max_seq_length = 100
-
+def create_transformer(vocab_size=1000, d_model=512, num_heads=8, num_layers=6, d_ff=2048, max_seq_length=100, dropout=0.1):
     model = Transformer(
         vocab_size=vocab_size,
         d_model=d_model,
         num_heads=num_heads,
         num_layers=num_layers,
         d_ff=d_ff,
-        max_seq_length=max_seq_length
+        max_seq_length=max_seq_length,
+        dropout=dropout
     )
-
     return model
 
 # Create and test the model
