@@ -40,20 +40,20 @@ def predict_future_values(model, initial_tokens, vocab_size, num_predictions=5, 
 
 def detokenize_predictions(predictions, vocab_size):
     bins = np.linspace(-10.0, 10.0, vocab_size)
-    bin_centers = (bins[:-1] + bins[1:]) / 2
-    normalized_values = [bin_centers[token-1] for token in predictions]
+    bin_centers = bins
+    normalized_values = [bin_centers[token] for token in predictions]
     return normalized_values
 
-def compare_predictions(price_data, future_predictions, sequence_length, scaler, offset=0):
+def compare_predictions(price_history, future_predictions, window_size, scaler, offset=0):
     predicted_prices = scaler.inverse_transform(np.array(future_predictions))
 
     n_predictions = len(predicted_prices)
-    n = len(price_data) - (sequence_length + n_predictions) - offset
+    n = len(price_history) - (window_size + n_predictions) - offset
 
-    historical_prices = price_data[n:len(price_data)-offset]
+    historical_prices = price_history[n:len(price_history)-offset]
 
-    historical_x = range(sequence_length + n_predictions)
-    prediction_x = range(sequence_length, sequence_length + n_predictions)
+    historical_x = range(window_size + n_predictions)
+    prediction_x = range(window_size, window_size + n_predictions)
 
     plt.figure(figsize=(15, 8))
     plt.plot(historical_x, historical_prices, label='Historical Prices', color='blue', linewidth=2)
@@ -73,6 +73,8 @@ def compare_predictions(price_data, future_predictions, sequence_length, scaler,
 if __name__ == "__main__":
     with open('model_hyperparam.toml', 'rb') as f:
         config = tomllib.load(f)
+
+    offset = 50
 
     # Load configuration
     vocab_size = config['model']['vocab_size']
@@ -105,12 +107,13 @@ if __name__ == "__main__":
     price_history = data_loader.get_ticker_data(ticker_symbol)
     normalized_history, price_scaler = data_loader.normalize_ticker_data(price_history)
     tokenized_history = data_loader.tokenize_ticker_data(normalized_history, vocab_size)
-
+    num_predictions = config['prediction']['future_days']
+    partial_tokenized_history = tokenized_history[:-(num_predictions+offset)]
     # Get initial sequence for prediction
-    initial_sequence = torch.tensor(tokenized_history[-sequence_length:], dtype=torch.long)
+    #
+    initial_sequence = torch.tensor(partial_tokenized_history[-sequence_length:], dtype=torch.long)
 
     # Make predictions
-    num_predictions = config['prediction']['future_days']
     predictions = predict_future_values(
         model,
         initial_sequence,

@@ -17,10 +17,10 @@ lr_scheduler_gamma = 0.95
 
 [data]
 training_tickers = [
-	{ ticker = "BBRI.JK", period = "2y" },
-	# { ticker = "BMRI.JK", period = "2y" },
+	{ ticker = "BBRI.JK", period = "5y" },
+	{ ticker = "BMRI.JK", period = "5y" },
 	# { ticker = "TLKM.JK", period = "2y" },
-	# { ticker = "BBNI.JK", period = "2y" },
+	{ ticker = "BBNI.JK", period = "5y" },
 	# { ticker = "UNVR.JK", period = "2y" },
 	# { ticker = "INDF.JK", period = "2y" },
 	# { ticker = "MYOR.JK", period = "2y" },
@@ -37,5 +37,5 @@ num_heads = 1
 dropout = 0.2
 
 [prediction]
-ticker_symbol = "ASII.JK"
+ticker_symbol = "BMRI.JK"
 future_days = 64
