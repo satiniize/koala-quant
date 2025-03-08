@@ -45,7 +45,9 @@ def detokenize_predictions(predictions, vocab_size):
     return normalized_values
 
 def compare_predictions(price_history, future_predictions, window_size, scaler, offset):
-    predicted_prices = scaler.inverse_transform(np.array(future_predictions))
+	# predicted_prices = scaler.inverse_transform(np.array(future_predictions), len(price_history - window_size - len(future_predictions) - offset))
+	# predicted_prices = scaler.inverse_transform(np.array(future_predictions), len(price_history - len(future_predictions) - offset))
+    # predicted_prices = scaler.inverse_transform(np.array(future_predictions))
 
     n_predictions = len(predicted_prices)
     n = len(price_history) - (window_size + n_predictions) - offset
@@ -57,9 +59,9 @@ def compare_predictions(price_history, future_predictions, window_size, scaler, 
 
     plt.figure(figsize=(15, 8))
     plt.plot(historical_x, historical_prices, label='Historical Prices', color='blue', linewidth=2)
-    plt.plot(prediction_x, predicted_prices, label='Predicted Prices', color='red', linestyle='--', linewidth=2)
+    plt.plot(prediction_x, future_predictions, label='Predicted Prices', color='red', linestyle='--', linewidth=2)
     plt.scatter(historical_x, historical_prices, color='blue', s=50)
-    plt.scatter(prediction_x, predicted_prices, color='red', s=50)
+    plt.scatter(prediction_x, future_predictions, color='red', s=50)
 
     plt.title(f'Historical and Predicted Prices', fontsize=14, pad=20)
     plt.xlabel('Days', fontsize=12)
@@ -74,7 +76,7 @@ if __name__ == "__main__":
     with open('model_hyperparam.toml', 'rb') as f:
         config = tomllib.load(f)
 
-    offset = 60
+    offset = 0
 
     # Load configuration
     vocab_size = config['model']['vocab_size']
@@ -103,17 +105,13 @@ if __name__ == "__main__":
     print("\nModel loaded successfully.")
 
     # Get and prepare data
-    ticker_symbol = "BMRI.JK"
+    ticker_symbol = "ITMG.JK"
     price_history = data_loader.get_ticker_data(ticker_symbol)
     normalized_history, price_scaler = data_loader.normalize_ticker_data(price_history)
     tokenized_history = data_loader.tokenize_ticker_data(normalized_history, vocab_size)
     num_predictions = config['prediction']['future_days']
     partial_tokenized_history = tokenized_history[:-(num_predictions+offset)]
-    # Get initial sequence for prediction
-    #
     initial_sequence = torch.tensor(partial_tokenized_history[-sequence_length:], dtype=torch.long)
-
-    # Make predictions
     predictions = predict_future_values(
         model,
         initial_sequence,
@@ -121,9 +119,11 @@ if __name__ == "__main__":
         num_predictions=num_predictions,
         device=device
     )
+    combined_tokens = np.concatenate([partial_tokenized_history, np.array(predictions)])
+    normalized_predictions = detokenize_predictions(combined_tokens, vocab_size)
 
     # Convert predictions back to normalized values
-    normalized_predictions = detokenize_predictions(predictions, vocab_size)
+    predicted_prices = price_scaler.inverse_transform(np.array(normalized_predictions))[-num_predictions:]
 
     # Print predictions
     print("\nPredicted values (normalized):")
@@ -131,4 +131,4 @@ if __name__ == "__main__":
         print(f"Day {i}: {pred:.4f}")
 
     # Plot predictions
-    compare_predictions(price_history, normalized_predictions, sequence_length, price_scaler, offset)
+    compare_predictions(price_history, predicted_prices, sequence_length, price_scaler, offset)

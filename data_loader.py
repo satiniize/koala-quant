@@ -52,7 +52,7 @@ class FinanceScaler(BaseEstimator, TransformerMixin):
 
         return result
 
-    def inverse_transform(self, X):
+    def inverse_transform(self, X, offset=0):
         """Reverse the transformation"""
         result = X.copy()
 
