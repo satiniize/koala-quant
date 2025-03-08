@@ -33,7 +33,7 @@ class FinanceScaler(BaseEstimator, TransformerMixin):
 
         trend = self.slope * x
         detrended = log_values - trend
-        self.mean = np.mean(np.abs(detrended))
+        self.mean = np.mean(detrended)
         self.stddev = np.std(detrended)
         return self
 

@@ -5,13 +5,13 @@ d_model = 64
 num_heads = 8
 num_layers = 4
 d_ff = 256
-max_seq_length = 30
+max_seq_length = 64
 dropout = 0.1
 
 [training]
 batch_size = 64
-num_epochs = 200
-learning_rate = 0.0005
+num_epochs = 500
+learning_rate = 0.001
 lr_scheduler_step = 10
 lr_scheduler_gamma = 0.95
 
@@ -19,13 +19,13 @@ lr_scheduler_gamma = 0.95
 training_tickers = [
 	{ ticker = "BBRI.JK", period = "5y" },
 	{ ticker = "BMRI.JK", period = "5y" },
-	# { ticker = "TLKM.JK", period = "2y" },
+	{ ticker = "TLKM.JK", period = "5y" },
 	{ ticker = "BBNI.JK", period = "5y" },
-	# { ticker = "UNVR.JK", period = "2y" },
-	# { ticker = "INDF.JK", period = "2y" },
-	# { ticker = "MYOR.JK", period = "2y" },
-	# { ticker = "PGAS.JK", period = "2y" },
-	# { ticker = "JSMR.JK", period = "2y" },
+	{ ticker = "UNVR.JK", period = "5y" },
+	{ ticker = "INDF.JK", period = "5y" },
+	{ ticker = "MYOR.JK", period = "5y" },
+	{ ticker = "PGAS.JK", period = "5y" },
+	{ ticker = "JSMR.JK", period = "5y" },
 ]
 sequence_length = 30
 train_test_split = 0.8

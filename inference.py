@@ -44,7 +44,7 @@ def detokenize_predictions(predictions, vocab_size):
     normalized_values = [bin_centers[token] for token in predictions]
     return normalized_values
 
-def compare_predictions(price_history, future_predictions, window_size, scaler, offset=0):
+def compare_predictions(price_history, future_predictions, window_size, scaler, offset):
     predicted_prices = scaler.inverse_transform(np.array(future_predictions))
 
     n_predictions = len(predicted_prices)
@@ -74,7 +74,7 @@ if __name__ == "__main__":
     with open('model_hyperparam.toml', 'rb') as f:
         config = tomllib.load(f)
 
-    offset = 50
+    offset = 60
 
     # Load configuration
     vocab_size = config['model']['vocab_size']
@@ -131,4 +131,4 @@ if __name__ == "__main__":
         print(f"Day {i}: {pred:.4f}")
 
     # Plot predictions
-    compare_predictions(price_history, normalized_predictions, sequence_length, price_scaler)
+    compare_predictions(price_history, normalized_predictions, sequence_length, price_scaler, offset)
