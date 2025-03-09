@@ -130,4 +130,4 @@ def create_transformer(vocab_size=1000, d_model=512, num_heads=8, num_layers=6, 
 model = create_transformer()
 x = torch.randint(0, 1000, (32, 50))  # Batch size = 32, sequence length = 50
 output = model(x)
-print(output.shape)  # Should be [32, 50, 1000]
+# print(output.shape)  # Should be [32, 50, 1000]

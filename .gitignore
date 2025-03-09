@@ -1,4 +1,4 @@
 env
-multi_target_finance_model.pth
 *.npy
+*.pth
 __pycache__

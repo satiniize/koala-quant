@@ -5,8 +5,8 @@ except:
 
 import torch
 import numpy as np
-from transformer_model2 import create_transformer
-import data_loader
+from transformer import create_transformer
+import finance_data
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
 
@@ -63,7 +63,7 @@ def compare_predictions(price_history, future_predictions, window_size, scaler, 
     plt.scatter(historical_x, historical_prices, color='blue', s=50)
     plt.scatter(prediction_x, future_predictions, color='red', s=50)
 
-    plt.title(f'Historical and Predicted Prices', fontsize=14, pad=20)
+    plt.title('Historical and Predicted Prices', fontsize=14, pad=20)
     plt.xlabel('Days', fontsize=12)
     plt.ylabel('Price', fontsize=12)
     plt.legend(fontsize=10)
@@ -73,7 +73,7 @@ def compare_predictions(price_history, future_predictions, window_size, scaler, 
     plt.show()
 
 if __name__ == "__main__":
-    with open('model_hyperparam.toml', 'rb') as f:
+    with open('transformer.toml', 'rb') as f:
         config = tomllib.load(f)
 
     offset = 0
@@ -101,14 +101,14 @@ if __name__ == "__main__":
         dropout=dropout
     )
     model.to(device)
-    model.load_state_dict(torch.load("multi_target_finance_model.pth", map_location=device))
+    model.load_state_dict(torch.load(config["training"]["best_model_path"], map_location=device))
     print("\nModel loaded successfully.")
 
     # Get and prepare data
-    ticker_symbol = "ITMG.JK"
-    price_history = data_loader.get_ticker_data(ticker_symbol)
-    normalized_history, price_scaler = data_loader.normalize_ticker_data(price_history)
-    tokenized_history = data_loader.tokenize_ticker_data(normalized_history, vocab_size)
+    ticker_symbol = "BMRI.JK"
+    price_history = finance_data.get_ticker_data(ticker_symbol)
+    normalized_history, price_scaler = finance_data.normalize_ticker_data(price_history)
+    tokenized_history = finance_data.tokenize_ticker_data(normalized_history, vocab_size)
     num_predictions = config['prediction']['future_days']
     partial_tokenized_history = tokenized_history[:-(num_predictions+offset)]
     initial_sequence = torch.tensor(partial_tokenized_history[-sequence_length:], dtype=torch.long)
